@@ -307,7 +307,10 @@ namespace SortOrStayEditor
 
             var door = g.gameObject.AddComponent<Door>();
             door.panel = panel;
-            door.openOffset = new Vector3(DOOR_W + 0.1f, 0f, 0f);
+            door.swing = true;                                       // hinged on the left, swings out into the corridor
+            door.hinge = new Vector3(-DOOR_W * 0.5f, DOOR_H * 0.5f, 0f);
+            door.swingAngle = -100f;
+            door.openTime = 2.2f;
             door.statusLamp = lamp.GetComponent<Renderer>();
             door.statusLight = lampLight;
             return door;

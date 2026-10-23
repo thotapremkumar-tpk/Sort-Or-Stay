@@ -3,7 +3,8 @@ using UnityEngine;
 
 namespace SortOrStay
 {
-    /// Sliding door (single or double) with a red/green status lamp. Locked until the puzzle unlocks it.
+    /// Sliding door (single or double), or a hinged door that swings open, with a red/green status lamp.
+    /// Locked until the puzzle unlocks it.
     public class Door : MonoBehaviour, IInteractable
     {
         public Transform panel;
@@ -11,6 +12,10 @@ namespace SortOrStay
         public Transform panelB;                       // optional second leaf (double door)
         public Vector3 openOffsetB = new Vector3(-1.3f, 0f, 0f);
         public float openTime = 1.6f;
+        [Header("Hinged (instead of sliding)")]
+        public bool swing;
+        public Vector3 hinge = new Vector3(-0.6f, 0f, 0f);  // in the door's local space, on the hinge-side edge
+        public float swingAngle = -100f;                     // degrees about the vertical; negative opens away from the room
         public Renderer statusLamp;
         public Light statusLight;
         public Color lockedColor = new Color(1f, 0.12f, 0.08f);
@@ -20,12 +25,13 @@ namespace SortOrStay
         public bool IsUnlocked { get; private set; }
 
         Vector3 closedPos, closedPosB;
+        Quaternion closedRot;
         bool shaking;
         Material lampMat;
 
         void Awake()
         {
-            if (panel != null) closedPos = panel.localPosition;
+            if (panel != null) { closedPos = panel.localPosition; closedRot = panel.localRotation; }
             if (panelB != null) closedPosB = panelB.localPosition;
             if (statusLamp != null) lampMat = statusLamp.material;
             SetLamp(lockedColor);
@@ -44,7 +50,8 @@ namespace SortOrStay
         {
             yield return new WaitForSeconds(0.55f);
             while (shaking) yield return null;
-            ProceduralSfx.Play(ProceduralSfx.Slide, transform.position + Vector3.up * 1.2f, 0.9f);
+            ProceduralSfx.Play(swing ? ProceduralSfx.Rattle : ProceduralSfx.Slide, transform.position + Vector3.up * 1.2f, swing ? 0.5f : 0.9f);
+            if (swing) { yield return SwingOpen(); yield break; }
             float e = 0f;
             while (e < openTime)
             {
@@ -58,6 +65,34 @@ namespace SortOrStay
             if (panelB != null) panelB.localPosition = closedPosB + openOffsetB;
             // the doorway is free now: let clicks walk through it
             if (PlayerController.Instance != null) PlayerController.Instance.RebuildNavMesh();
+        }
+
+        /// A heavy door: a small push to unlatch it, then it swings wide and settles with a little bounce.
+        IEnumerator SwingOpen()
+        {
+            float e = 0f;
+            while (e < openTime)
+            {
+                e += Time.deltaTime;
+                float t = Mathf.Clamp01(e / openTime);
+                float k = t < 0.12f
+                    ? Mathf.SmoothStep(0f, 0.06f, t / 0.12f)                            // unlatch
+                    : Mathf.Lerp(0.06f, 1f, 1f - Mathf.Pow(1f - (t - 0.12f) / 0.88f, 3f));   // swing, slowing as it opens
+                k += 0.025f * Mathf.Sin(Mathf.Clamp01((t - 0.8f) / 0.2f) * Mathf.PI);     // settles against its stop
+                SetSwing(k);
+                yield return null;
+            }
+            SetSwing(1f);
+            ProceduralSfx.Play(ProceduralSfx.Thud, transform.position + Vector3.up * 1.2f, 0.4f);
+            if (PlayerController.Instance != null) PlayerController.Instance.RebuildNavMesh();
+        }
+
+        void SetSwing(float k)
+        {
+            if (panel == null) return;
+            Quaternion r = Quaternion.Euler(0f, swingAngle * k, 0f);
+            panel.localPosition = hinge + r * (closedPos - hinge);
+            panel.localRotation = r * closedRot;
         }
 
         IEnumerator Shake()
