@@ -25,6 +25,8 @@ namespace SortOrStay
         [Header("Hands")]
         [Tooltip("While sorting, the avatar walks this close to the shelf and pulls books out by hand.")]
         public float handReach = 0.6f;
+        [Tooltip("First person: the eye stays at least this far from the shelf, so every book is on screen.")]
+        public float firstPersonStandOff = 1.0f;
 
         static readonly Color NextColor = new Color(1f, 0.72f, 0.2f);
         static readonly Color Advice = new Color(1f, 0.82f, 0.45f);
@@ -47,7 +49,16 @@ namespace SortOrStay
 
         // ------------------------------------------------------------ setup
 
-        void Start() { Setup(); }
+        void Start()
+        {
+            // first person: stand the eye off the shelf far enough that all eight books fit on screen
+            if (Player != null && shelfSlots.Length > 1)
+            {
+                Vector3 a = shelfSlots[0].position, b = shelfSlots[shelfSlots.Length - 1].position;
+                Player.SetViewStandOff((a + b) * 0.5f, -shelfSlots[0].forward, b - a, Vector3.Distance(a, b) * 0.5f, firstPersonStandOff);
+            }
+            Setup();
+        }
 
         public override void Setup()
         {
@@ -248,16 +259,19 @@ namespace SortOrStay
             if (Player != null && Player.Hand != null) Player.Hand.Release();
             keyIdx++;
             busy = false;
-            ShowGaps();
-            Refresh();
             book.Flash(SortItem.SortedColor, 0.6f);
 
             if (keyIdx >= N)
             {
+                // the last book is in: mark it solved before anything reads "the next book", which no longer exists
                 Solved = true;
+                ShowGaps();
+                Refresh();
                 OnSolved();
                 yield break;
             }
+            ShowGaps();
+            Refresh();
             if (GameUI.Instance != null)
                 GameUI.Instance.Info($"{Fmt(book.value)} placed.  Spots 1-{keyIdx} are sorted.  Next:  pull out {Fmt(shelf[keyIdx].value)}.");
         }
@@ -406,7 +420,7 @@ namespace SortOrStay
             if (GameUI.Instance != null)
                 GameUI.Instance.SetStats($"SHIFTS  {shifts}      COMPARISONS  {comparisons}      HINTS  {hintsUsed}");
 
-            string step = Solved ? "ALL SORTED"
+            string step = Solved || keyIdx >= n ? "ALL SORTED"
                 : key != null ? $"KEY  {Fmt(key.value)}" + (gap > 0 ? $"  vs  {Fmt(shelf[gap - 1].value)}" : "")
                 : $"NEXT  {Fmt(shelf[keyIdx].value)}";
             string phase = $"SORTED  {Mathf.Min(keyIdx, n)} / {n}";
