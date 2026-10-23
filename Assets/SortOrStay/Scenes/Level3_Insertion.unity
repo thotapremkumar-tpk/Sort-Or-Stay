@@ -2012,11 +2012,11 @@ MonoBehaviour:
   overview: {fileID: 582777818}
   holdTime: 2.2
   flyTime: 3
-  objective: "Shelve the books from the table, <b>left to right in table order</b>.\nThen <b>insertion sort</b> the shelf:  pull a book out, <b>shift</b> bigger books right, <b>place</b> it.\n<size=20>Click the glowing book or press F  \xB7  click the glowing spot or press its number  \xB7  H hint</size>"
+  objective: "<b>Insertion sort</b> the books on the shelf, smallest number first.\nPull out the glowing book;  <b>shift</b> a bigger left neighbour right (click it),  or <b>place</b> the book (click it).\n<size=20>Click the glowing book or press F  \xB7  click the glowing spot or press its number  \xB7  H hint</size>"
   lines:
   - Floor 3.  A library, warm and quiet.
-  - Eight books on the reading table, and an empty return shelf.
-  - Shelve them all first.  Then sort the shelf, one book at a time.
+  - Eight books on the return shelf, all out of order.
+  - Sort them where they stand, one book at a time.
 --- !u!114 &123870426
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -33658,7 +33658,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: 'TABLE ORDER:  LEFT  TO  RIGHT'
+  m_text: 'QUIET  PLEASE'
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}

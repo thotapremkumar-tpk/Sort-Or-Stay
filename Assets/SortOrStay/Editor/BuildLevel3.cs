@@ -20,7 +20,7 @@ namespace SortOrStayEditor
         const float HW = W * 0.5f, HD = D * 0.5f;
         const float DOOR_W = 1.8f, DOOR_H = 2.5f;
         const int BOOKS = 8;
-        const float TABLE_Z = -1.25f, TABLE_TOP = 0.787f, TABLE_BOOK_Z = -0.95f, TABLE_PITCH = 0.3f;
+        const float TABLE_Z = -1.25f, TABLE_TOP = 0.787f;
         const float SHELF_Z = 1.25f, SHELF_FRONT = 1.05f, SHELF_Y = 1.035f, SHELF_PITCH = 0.14f;
         static readonly Vector3 SPAWN = new Vector3(-3.5f, 0f, 0.1f);
         static readonly int[] PREVIEW = { 512, 133, 709, 4, 398, 641, 220, 909 };
@@ -30,7 +30,6 @@ namespace SortOrStayEditor
         static Material[] mCovers;
 
         static float ShelfX(int j) => -SHELF_PITCH * (BOOKS - 1) * 0.5f + SHELF_PITCH * j;
-        static float TableX(int i) => TABLE_PITCH * (BOOKS - 1) * 0.5f - TABLE_PITCH * i;    // left to right as seen from the aisle
 
         [MenuItem("Sort or Stay/Build Level 3 (Library)")]
         public static void Build()
@@ -51,9 +50,9 @@ namespace SortOrStayEditor
             var door = DoubleDoor(root, HD, T, DOOR_W, DOOR_H, mBrass, mWoodDark, mLamp, mGlass, true);
             door.lockedMessage = "Locked.  A brass plate reads:  EVERY BOOK IN ITS PLACE.";
 
-            BuildTable(root, out Transform[] tableSlots);
+            BuildTable(root);
             BuildReturnShelf(root, out Transform[] shelfSlots, out TMP_Text board);
-            var books = BuildBooks(root, tableSlots);
+            var books = BuildBooks(root, shelfSlots);              // the books start on the shelf, out of order
             var gaps = BuildGaps(root, shelfSlots);
             var terminal = BuildKiosk(root);
             BuildWallBookcases(root);
@@ -68,7 +67,6 @@ namespace SortOrStayEditor
             var puzzle = sys.gameObject.AddComponent<InsertionPuzzle>();
             puzzle.items = books;
             puzzle.slots = shelfSlots;
-            puzzle.tableSlots = tableSlots;
             puzzle.shelfSlots = shelfSlots;
             puzzle.gaps = gaps;
             puzzle.board = board;
@@ -92,14 +90,14 @@ namespace SortOrStayEditor
             intro.player = player;
             intro.puzzle = puzzle;
             intro.overview = overview;
-            intro.objective = "Shelve the books from the table, <b>left to right in table order</b>.\n" +
-                              "Then <b>insertion sort</b> the shelf:  pull a book out, <b>shift</b> bigger books right, <b>place</b> it.\n" +
+            intro.objective = "<b>Insertion sort</b> the books on the shelf, smallest number first.\n" +
+                              "Pull out the glowing book;  <b>shift</b> a bigger left neighbour right (click it),  or <b>place</b> the book (click it).\n" +
                               "<size=20>Click the glowing book or press F  ·  click the glowing spot or press its number  ·  H hint</size>";
             intro.lines = new[]
             {
                 "Floor 3.  A library, warm and quiet.",
-                "Eight books on the reading table, and an empty return shelf.",
-                "Shelve them all first.  Then sort the shelf, one book at a time."
+                "Eight books on the return shelf, all out of order.",
+                "Sort them where they stand, one book at a time."
             };
 
             BuildStairwell(root, HD + T, H, DOOR_W, lm, "FLOOR 4", mFloor, mWall, mCeil, mWoodDark, mExit);
@@ -213,7 +211,7 @@ namespace SortOrStayEditor
 
         // ============================================================ reading table + books
 
-        static void BuildTable(Transform p, out Transform[] slots)
+        static void BuildTable(Transform p)
         {
             var g = Group("ReadingTable", p);
             g.localPosition = new Vector3(0f, 0f, TABLE_Z);
@@ -225,23 +223,13 @@ namespace SortOrStayEditor
                 for (int sz = -1; sz <= 1; sz += 2)
                     Cube("Leg", new Vector3(sx * (len * 0.5f - 0.12f), (TABLE_TOP - 0.05f) * 0.5f, sz * (dep * 0.5f - 0.1f)), new Vector3(0.08f, TABLE_TOP - 0.05f, 0.08f), mWoodDark, g);
 
-            // brass plate on the aisle edge: which way the table order runs
+            // brass plate on the aisle edge
             var plate = Group("OrderPlate", g);
             plate.localPosition = new Vector3(0f, TABLE_TOP + 0.002f, dep * 0.5f - 0.06f);
             Cube("Plate", Vector3.zero, new Vector3(1.6f, 0.004f, 0.07f), mBrass, plate, false);
-            var t = Text("Text", plate, new Vector3(0f, 0.003f, 0f), new Vector2(1.55f, 0.06f), "TABLE ORDER:  LEFT  TO  RIGHT",
+            var t = Text("Text", plate, new Vector3(0f, 0.003f, 0f), new Vector2(1.55f, 0.06f), "QUIET  PLEASE",
                          new Color(0.22f, 0.15f, 0.08f), TextAlignmentOptions.Center, true);
             t.rectTransform.localRotation = Quaternion.Euler(90f, 180f, 0f);   // lies flat, read from the aisle
-
-            slots = new Transform[BOOKS];
-            for (int i = 0; i < BOOKS; i++)
-            {
-                var s = new GameObject("TableSlot_" + i).transform;
-                s.SetParent(p, false);
-                s.position = new Vector3(TableX(i), TABLE_TOP, TABLE_BOOK_Z);
-                s.rotation = Quaternion.Euler(0f, 180f, 0f);        // spines face the aisle (+Z)
-                slots[i] = s;
-            }
 
             // two banker's lamps at the ends of the table
             foreach (float x in new[] { -1.45f, 1.45f })
@@ -257,7 +245,7 @@ namespace SortOrStayEditor
             }
         }
 
-        static List<SortItem> BuildBooks(Transform p, Transform[] tableSlots)
+        static List<SortItem> BuildBooks(Transform p, Transform[] slots)
         {
             var parent = Group("Books", p);
             var list = new List<SortItem>();
@@ -272,7 +260,7 @@ namespace SortOrStayEditor
 
                 var b = new GameObject("Book_" + (i + 1));
                 b.transform.SetParent(parent, false);
-                b.transform.SetPositionAndRotation(tableSlots[i].position, tableSlots[i].rotation);
+                b.transform.SetPositionAndRotation(slots[i].position, slots[i].rotation);
 
                 var board = Cube("Board_L", new Vector3(-t * 0.5f + 0.003f, h * 0.5f, 0f), new Vector3(0.006f, h, d), cover, b.transform, false);
                 Cube("Board_R", new Vector3(t * 0.5f - 0.003f, h * 0.5f, 0f), new Vector3(0.006f, h, d), cover, b.transform, false);
