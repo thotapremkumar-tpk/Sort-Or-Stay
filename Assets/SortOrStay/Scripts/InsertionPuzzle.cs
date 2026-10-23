@@ -6,10 +6,11 @@ using UnityEngine.InputSystem;
 
 namespace SortOrStay
 {
-    /// Floor 3, the Library. Eight books wait on the reading table in a fixed order; the return shelf
-    /// starts with the first one. The player carries the next book from the table and slides it into
-    /// a glowing gap on the shelf; bigger books shift right to make room. The shelf stays sorted the
-    /// whole time: that growing sorted section is insertion sort.
+    /// Floor 3, the Library. Eight books wait on the reading table.
+    /// Phase 1: the player shelves them all on the return shelf (the almirah), left to right in table order, unsorted.
+    /// Phase 2: the shelf is insertion-sorted in place. The next book is pulled out; the player compares it with its
+    /// left neighbour and calls SHIFT (the neighbour is bigger: it slides one place right into the gap) or PLACE
+    /// (drop the book into the gap). The part of the shelf left of the next book is always sorted.
     public class InsertionPuzzle : SortPuzzleBase
     {
         [Header("Deal")]
@@ -19,23 +20,37 @@ namespace SortOrStay
         [Header("Room")]
         public Transform[] tableSlots;       // where the books stand on the table, in "table order"
         public Transform[] shelfSlots;       // shelf positions, left to right
-        public InsertSlot[] gaps;            // insertion gaps 0..n (gap m sits just left of shelf slot m)
+        public InsertSlot[] gaps;            // clickable glow markers; the active one is moved onto the empty shelf position
         public TMP_Text board;
         public Terminal terminal;
+
+        [Header("Hands")]
+        [Tooltip("While sorting, the avatar walks this close to the shelf and pulls books out by hand.")]
+        public float handReach = 0.6f;
 
         static readonly Color NextColor = new Color(1f, 0.72f, 0.2f);
         static readonly Color Advice = new Color(1f, 0.82f, 0.45f);
 
         readonly List<SortItem> table = new List<SortItem>();
-        readonly List<SortItem> shelf = new List<SortItem>();
-        SortItem held;
+        SortItem[] shelf;                    // the book in each shelf position (null = empty)
+        int shelved;                         // phase 1: books on the shelf so far
+        bool sorting;                        // phase 2 has begun
+        int keyIdx;                          // phase 2: position of the book being inserted (everything left of it is sorted)
+        SortItem key;                        // phase 2: the book pulled out of the shelf
+        int gap = -1;                        // phase 2: the empty shelf position while the key is out
+        SortItem held;                       // phase 1: the book carried from the table
         bool flying;
         int shifts;
         int startInversions;
 
-        public bool IsHolding => held != null && !flying;
+        int N => items.Count;
+
+        /// A gap on the shelf can be clicked: a table book is in hand (phase 1) or a book is pulled out (phase 2).
+        public bool IsHolding => sorting ? key != null : held != null && !flying;
 
         public static string Fmt(int v) => v.ToString("000");
+
+        Vector3 Grip => Vector3.up * 0.14f - Vector3.forward * 0.09f;   // the spine, middle height
 
         // ------------------------------------------------------------ setup
 
@@ -43,39 +58,41 @@ namespace SortOrStay
 
         public override void Setup()
         {
-            int n = items.Count;
+            int n = N;
             int want = Mathf.Min(minOutOfOrderPairs, n * (n - 1) / 2 - 1);
             int[] vals = Pick(callNumberPool, n);
             int guard = 0;
             while (CountInversions(vals) < want && ++guard < 800) vals = Pick(callNumberPool, n);
 
             table.Clear();
-            shelf.Clear();
+            shelf = new SortItem[n];
             for (int i = 0; i < n; i++)
             {
                 var b = items[i];
                 b.puzzle = this;
                 b.tintModel = false;
+                b.reachDistance = 0f;
                 b.Init(vals[i]);
                 if (b.label != null) b.label.text = Stacked(vals[i]);
                 b.transform.SetPositionAndRotation(tableSlots[i].position, tableSlots[i].rotation);
+                SetColliders(b, true);
                 table.Add(b);
             }
 
-            // the shelf starts with the first book: a sorted section of one
-            var first = table[0];
-            table.RemoveAt(0);
-            shelf.Add(first);
-            first.transform.SetPositionAndRotation(shelfSlots[0].position, shelfSlots[0].rotation);
-
+            shelved = 0;
+            sorting = false;
+            keyIdx = 1;
+            key = null;
+            gap = -1;
             held = null;
             flying = false;
+            if (Player != null && Player.Hand != null) Player.Hand.Release();
             comparisons = swaps = shifts = hintsUsed = mistakes = 0;
             startInversions = CountInversions(vals);
             Solved = false;
             busy = false;
             startTime = Time.time;
-            ShowGaps(false);
+            ShowGaps();
             Refresh();
         }
 
@@ -99,31 +116,38 @@ namespace SortOrStay
                 RequestHint();
             }
 
-            // keyboard: F fetches the next book, 1-9 slides it into that gap (walks over if needed)
+            // keyboard: F takes the next book (from the table, or out of the shelf); 1-8 use that shelf position
             if (kb != null && ShortcutsAllowed() && !kb.leftCtrlKey.isPressed)
             {
                 if (kb.fKey.wasPressedThisFrame)
                 {
-                    if (held == null && table.Count > 0) UseByKey(table[0]);
-                    else if (held != null && GameUI.Instance != null) GameUI.Instance.Info($"You're already holding {Fmt(held.value)}.  Press the number of a gap to shelve it.");
+                    if (!sorting) { if (held == null && table.Count > 0) UseByKey(table[0]); }
+                    else if (key == null && keyIdx < N) UseByKey(shelf[keyIdx]);
                 }
                 int d = DigitPressed(kb);
-                if (d > 0)
+                if (d > 0 && d <= N)
                 {
-                    if (held == null)
+                    int m = d - 1;
+                    if (!sorting)
                     {
-                        if (GameUI.Instance != null) GameUI.Instance.Info("Pick up the next book first:  press F or click it.");
+                        if (held == null) { if (ui != null) ui.Info("Pick up the next book first:  press F or click it."); }
+                        else if (!flying && m == shelved) UseByKey(gaps[m]);
                     }
-                    else if (!flying && gaps != null && d - 1 < gaps.Length && d - 1 <= shelf.Count && gaps[d - 1] != null)
-                        UseByKey(gaps[d - 1]);
+                    else if (key != null && m == gap) UseByKey(gaps[m]);
+                    else if (shelf[m] != null) UseByKey(shelf[m]);
                 }
             }
 #if UNITY_EDITOR
             // play-testing shortcut (editor only): Ctrl+N performs the next correct step
             if (kb != null && kb.leftCtrlKey.isPressed && kb.nKey.wasPressedThisFrame && AcceptsInput && !blocked)
             {
-                if (held == null) { if (table.Count > 0) StartCoroutine(PickUp(table[0])); }
-                else if (!flying) TryInsert(CorrectGap(held.value));
+                if (!sorting)
+                {
+                    if (held == null) { if (table.Count > 0) StartCoroutine(PickUp(table[0])); }
+                    else if (!flying) TryInsert(shelved);
+                }
+                else if (key == null) StartCoroutine(PullOut());
+                else Decide(gap > 0 && shelf[gap - 1].value > key.value);
             }
 #endif
 
@@ -152,25 +176,31 @@ namespace SortOrStay
             if (!AcceptsInput) return;
             var ui = GameUI.Instance;
 
-            if (held != null)
+            if (!sorting)
             {
-                if (ui != null) ui.Info($"You're holding {Fmt(held.value)}.  Aim at a glowing gap on the shelf to slide it in.");
+                if (held != null) { if (ui != null) ui.Info($"You're holding {Fmt(held.value)}.  Put it in spot {shelved + 1} on the shelf."); return; }
+                if (!table.Contains(book)) return;
+                if (book != table[0])
+                {
+                    Gesture(PlayerController.GestureScratch);
+                    table[0].Flash(SortItem.HintColor, 1.4f);
+                    if (ui != null) ui.Flash($"Take the books in table order.  Next is {Fmt(table[0].value)}, the left-most one.", Advice, 3.2f);
+                    return;
+                }
+                StartCoroutine(PickUp(book));
                 return;
             }
-            if (shelf.Contains(book))
+
+            if (key == null)
             {
-                if (ui != null) ui.Info($"{Fmt(book.value)} is already on the return shelf.");
+                if (book == shelf[keyIdx]) StartCoroutine(PullOut());
                 return;
             }
-            if (table.Count > 0 && book != table[0])
-            {
-                Gesture(PlayerController.GestureScratch);
-                table[0].Flash(SortItem.HintColor, 1.4f);
-                if (ui != null) ui.Flash($"Take the books in table order.  Next is {Fmt(table[0].value)}, the left-most one.", Advice, 3.2f);
-                return;
-            }
-            StartCoroutine(PickUp(book));
+            if (book == key) Decide(false);                                  // PLACE it in the gap
+            else if (gap > 0 && book == shelf[gap - 1]) Decide(true);        // SHIFT the neighbour right
         }
+
+        // ------------------------------------------------------------ phase 1: table to shelf, in table order
 
         IEnumerator PickUp(SortItem book)
         {
@@ -197,98 +227,171 @@ namespace SortOrStay
             }
             flying = false;
             busy = false;
-            ShowGaps(true);
+            ShowGaps();
             Refresh();
-            if (GameUI.Instance != null)
-                GameUI.Instance.Info($"Holding {Fmt(book.value)}.  Find where it belongs on the shelf.");
+            if (GameUI.Instance != null) GameUI.Instance.Info($"Holding {Fmt(book.value)}.  Put it in spot {shelved + 1}.");
         }
 
-        // ------------------------------------------------------------ inserting
-
+        /// A glowing gap was clicked.
         public void TryInsert(int index)
         {
-            if (held == null || flying || !AcceptsInput) return;
-            int k = shelf.Count;
-            if (index < 0 || index > k) return;
-
-            bool okLeft = index == 0 || shelf[index - 1].value <= held.value;
-            bool okRight = index == k || held.value <= shelf[index].value;
-            if (!okLeft || !okRight)
-            {
-                mistakes++;
-                if (gaps != null && index < gaps.Length && gaps[index] != null) gaps[index].FlashError();
-                ProceduralSfx.Play(ProceduralSfx.Error, shelfSlots[Mathf.Min(index, shelfSlots.Length - 1)].position, 0.7f);
-                Gesture(PlayerController.GestureScratch);
-                string why = !okLeft
-                    ? $"{Fmt(shelf[index - 1].value)} on its left is bigger than {Fmt(held.value)}"
-                    : $"{Fmt(shelf[index].value)} on its right is smaller than {Fmt(held.value)}";
-                if (GameUI.Instance != null) GameUI.Instance.Flash("That breaks the order:  " + why + ".");
-                Refresh();
-                return;
-            }
-
-            int s = k - index;                  // books that must shift one place right
-            shifts += s;
-            swaps = shifts;
-            comparisons += s + (index > 0 ? 1 : 0);
+            if (!AcceptsInput) return;
+            if (sorting) { if (key != null && index == gap) Decide(false); return; }
+            if (held == null || flying || index != shelved) return;
             var book = held;
             held = null;
-            ShowGaps(false);
-            StartCoroutine(InsertRoutine(book, index, s));
+            StartCoroutine(ShelveRoutine(book, index));
         }
 
-        IEnumerator InsertRoutine(SortItem book, int index, int shifted)
+        IEnumerator ShelveRoutine(SortItem book, int index)
         {
             busy = true;
             flying = true;
-            int k = shelf.Count;
+            ShowGaps();
+            yield return GlideIn(book, index);
+            shelf[index] = book;
+            shelved++;
+            SetColliders(book, true);
+            flying = false;
+            busy = false;
+            ShowGaps();
+            Refresh();
 
-            // shift the bigger books right, starting from the end, like the algorithm does
-            for (int j = k - 1; j >= index; j--)
+            var ui = GameUI.Instance;
+            if (shelved < N)
             {
-                StartCoroutine(SlideTo(shelf[j], shelfSlots[j + 1], 0.24f));
-                ProceduralSfx.Play(ProceduralSfx.Page, shelfSlots[j].position, 0.35f);
-                yield return new WaitForSeconds(0.1f);
+                if (ui != null) ui.Info($"{shelved} / {N} on the shelf.  Next:  {Fmt(table[0].value)}.");
+                yield break;
             }
-            if (shifted > 0) yield return new WaitForSeconds(0.2f);
 
-            shelf.Insert(index, book);
+            // every book is on the shelf, in table order: now sort them where they stand
+            sorting = true;
+            keyIdx = 1;
+            foreach (var b in items) b.reachDistance = handReach;
+            Refresh();
+            if (ui != null)
+            {
+                ui.SetObjective("<b>Insertion sort</b> the shelf.\nPull out the glowing book, then compare it with its left neighbour:\n" +
+                                "<b>SHIFT</b> the neighbour right if it is bigger (click it),  otherwise <b>PLACE</b> the book (click it or the gap).");
+                ui.Flash($"All {N} books are shelved, unsorted.  Now insertion sort:  pull out {Fmt(shelf[1].value)} (spot 2).", Advice, 5f);
+            }
+        }
 
-            // the book glides from the hands into its gap
+        /// The book glides from in front of the shelf into position m.
+        IEnumerator GlideIn(SortItem book, int m)
+        {
             Vector3 p0 = book.transform.position;
             Quaternion r0 = book.transform.rotation;
-            Vector3 p1 = shelfSlots[index].position;
-            Vector3 front = p1 - shelfSlots[index].forward * 0.25f + Vector3.up * 0.03f;
-            float e = 0f, dur = 0.5f;
+            Vector3 p1 = shelfSlots[m].position;
+            Vector3 front = Front(m);
+            float e = 0f, dur = 0.45f;
             while (e < dur)
             {
                 e += Time.deltaTime;
                 float t = Mathf.SmoothStep(0f, 1f, e / dur);
                 book.transform.position = Vector3.Lerp(Vector3.Lerp(p0, front, t), Vector3.Lerp(front, p1, t), t);
-                book.transform.rotation = Quaternion.Slerp(r0, shelfSlots[index].rotation, Mathf.Clamp01(t * 1.4f));
+                book.transform.rotation = Quaternion.Slerp(r0, shelfSlots[m].rotation, Mathf.Clamp01(t * 1.4f));
                 yield return null;
             }
-            book.transform.SetPositionAndRotation(p1, shelfSlots[index].rotation);
-            ProceduralSfx.Play(ProceduralSfx.Swap, p1, 0.6f);
-            SetColliders(book, true);
+            book.transform.SetPositionAndRotation(p1, shelfSlots[m].rotation);
+            ProceduralSfx.Play(ProceduralSfx.Swap, p1, 0.55f);
+        }
 
-            flying = false;
+        /// Just in front of shelf position m, on the aisle side, where a pulled-out book waits.
+        Vector3 Front(int m) => shelfSlots[m].position - shelfSlots[m].forward * 0.22f + Vector3.up * 0.03f;
+
+        // ------------------------------------------------------------ phase 2: insertion sort on the shelf
+
+        IEnumerator PullOut()
+        {
+            busy = true;
+            key = shelf[keyIdx];
+            shelf[keyIdx] = null;
+            gap = keyIdx;
+            key.Highlight(SortItem.SelectedColor);
+            ProceduralSfx.Play(ProceduralSfx.Page, key.transform.position, 0.7f);
+            if (Player != null && Player.Hand != null) Player.Hand.Hold(HandReach.Right, key.transform, Grip);
+            yield return MoveTo(key, Front(gap), 0.3f);
             busy = false;
+            ShowGaps();
+            Refresh();
+            if (GameUI.Instance != null)
+                GameUI.Instance.Info($"{Fmt(key.value)} is out.  Compare it with {Fmt(shelf[gap - 1].value)} on its left.");
+        }
+
+        /// The player's call on the pulled-out book: shift its left neighbour right (true) or place it here (false).
+        void Decide(bool shift)
+        {
+            int k = key.value;
+            bool shouldShift = gap > 0 && shelf[gap - 1].value > k;
+            if (shift != shouldShift)
+            {
+                mistakes++;
+                var left = gap > 0 ? shelf[gap - 1] : null;
+                if (left != null) left.Flash(SortItem.ErrorColor, 0.6f);
+                key.Flash(SortItem.ErrorColor, 0.6f);
+                ProceduralSfx.Play(ProceduralSfx.Error, key.transform.position, 0.7f);
+                Gesture(PlayerController.GestureScratch);
+                if (GameUI.Instance != null && left != null)
+                    GameUI.Instance.Flash(shift
+                        ? $"{Fmt(left.value)} is smaller than {Fmt(k)}:  it stays.  PLACE {Fmt(k)} in the gap."
+                        : $"{Fmt(left.value)} is bigger than {Fmt(k)}:  SHIFT it right first (click it).",
+                        Advice, 3.4f);
+                Refresh();
+                return;
+            }
+
+            if (gap > 0) comparisons++;
+            StartCoroutine(shift ? ShiftRoutine() : PlaceRoutine());
+        }
+
+        IEnumerator ShiftRoutine()
+        {
+            busy = true;
+            shifts++;
+            swaps = shifts;
+            var b = shelf[gap - 1];
+            int to = gap;
+            shelf[to] = b;
+            shelf[gap - 1] = null;
+            gap--;
+            ShowGaps();
+            ProceduralSfx.Play(ProceduralSfx.Page, shelfSlots[to].position, 0.45f);
+            StartCoroutine(SlideTo(b, shelfSlots[to], 0.3f));
+            yield return MoveTo(key, Front(gap), 0.3f);
+            busy = false;
+            ShowGaps();
+            Refresh();
+            if (GameUI.Instance != null)
+                GameUI.Instance.Info(gap > 0
+                    ? $"{Fmt(b.value)} > {Fmt(key.value)}:  shifted right.  Now compare with {Fmt(shelf[gap - 1].value)}."
+                    : $"{Fmt(b.value)} > {Fmt(key.value)}:  shifted right.  Nothing left of the gap:  place {Fmt(key.value)}.");
+        }
+
+        IEnumerator PlaceRoutine()
+        {
+            busy = true;
+            var book = key;
+            int m = gap;
+            yield return GlideIn(book, m);
+            shelf[m] = book;
+            key = null;
+            gap = -1;
+            if (Player != null && Player.Hand != null) Player.Hand.Release();
+            keyIdx++;
+            busy = false;
+            ShowGaps();
             Refresh();
             book.Flash(SortItem.SortedColor, 0.6f);
 
-            if (table.Count == 0)
+            if (keyIdx >= N)
             {
                 Solved = true;
                 OnSolved();
                 yield break;
             }
-            var ui = GameUI.Instance;
-            if (ui != null)
-            {
-                if (shifted == 0) ui.Info(index == 0 ? "Smallest so far:  it goes first." : "Bigger than everything on the shelf:  it goes on the end.  No shifting.");
-                else ui.Info($"{shifted} book{(shifted == 1 ? "" : "s")} shifted right to make room.");
-            }
+            if (GameUI.Instance != null)
+                GameUI.Instance.Info($"{Fmt(book.value)} placed.  Spots 1-{keyIdx} are sorted.  Next:  pull out {Fmt(shelf[keyIdx].value)}.");
         }
 
         IEnumerator SlideTo(SortItem b, Transform target, float dur)
@@ -310,67 +413,69 @@ namespace SortOrStay
             foreach (var col in b.GetComponentsInChildren<Collider>(true)) col.enabled = on;
         }
 
-        void ShowGaps(bool on)
+        /// One glowing gap at most: the next free spot (phase 1) or the empty spot left by the pulled-out book (phase 2).
+        void ShowGaps()
         {
             if (gaps == null) return;
+            int active = sorting ? (key != null && !busy ? gap : -1) : (held != null && !flying ? shelved : -1);
             for (int m = 0; m < gaps.Length; m++)
-                if (gaps[m] != null) gaps[m].gameObject.SetActive(on && m <= shelf.Count);
-        }
-
-        int CorrectGap(int v)
-        {
-            int i = 0;
-            while (i < shelf.Count && shelf[i].value <= v) i++;
-            return i;
+            {
+                if (gaps[m] == null) continue;
+                bool on = m == active && m < shelfSlots.Length;
+                if (on) gaps[m].transform.position = shelfSlots[m].position;
+                gaps[m].gameObject.SetActive(on);
+            }
         }
 
         public string PromptForSlot(int index)
         {
-            if (held == null) return "";
-            int k = shelf.Count;
-            string h = Fmt(held.value);
-            string key = $"   [{index + 1}]";
-            if (index == 0) return $"Slide {h} in first, before {Fmt(shelf[0].value)}" + key;
-            if (index >= k) return $"Put {h} on the end, after {Fmt(shelf[k - 1].value)}" + key;
-            return $"Slide {h} between {Fmt(shelf[index - 1].value)} and {Fmt(shelf[index].value)}" + key;
+            if (sorting) return key != null ? $"Place {Fmt(key.value)} here   [{index + 1}]" : "";
+            return held != null ? $"Put {Fmt(held.value)} in spot {index + 1}   [{index + 1}]" : "";
         }
 
-        /// Only books still on the table can be clicked, and only while your hands are empty;
-        /// while you hold a book, clicks on the shelf go to the nearest gap instead.
-        public override bool CanUse(SortItem book) => AcceptsInput && held == null && table.Contains(book);
+        /// Only the books that matter right now can be clicked.
+        public override bool CanUse(SortItem book)
+        {
+            if (!AcceptsInput) return false;
+            if (!sorting) return held == null && table.Contains(book);
+            if (key == null) return keyIdx < N && book == shelf[keyIdx];
+            return book == key || (gap > 0 && book == shelf[gap - 1]);
+        }
 
         public override string PromptFor(SortItem book)
         {
-            if (!AcceptsInput) return "";
-            if (held != null) return shelf.Contains(book) ? $"{Fmt(book.value)}  ·  aim at a glowing gap instead" : "";
-            if (shelf.Contains(book)) return $"{Fmt(book.value)}  ·  shelved";
-            if (table.Count > 0 && book == table[0]) return $"Pick up book {Fmt(book.value)}   [F]";
-            return table.Count > 0 ? $"{Fmt(book.value)}  ·  take {Fmt(table[0].value)} first" : "";
+            if (!CanUse(book)) return "";
+            if (!sorting) return book == table[0] ? $"Pick up {Fmt(book.value)}   [F]" : $"{Fmt(book.value)}  ·  take {Fmt(table[0].value)} first";
+            if (key == null) return $"Pull out {Fmt(book.value)}   [F]";
+            if (book == key) return $"PLACE {Fmt(key.value)} in the gap";
+            return $"SHIFT {Fmt(book.value)} right";
         }
 
         // ------------------------------------------------------------ hints
 
         public override string Hint()
         {
-            if (Solved) return "Every book is shelved.";
-            if (held == null)
-                return table.Count > 0 ? $"Pick up the next book from the table:  {Fmt(table[0].value)}, the left-most one." : "";
-            int g = CorrectGap(held.value);
-            if (g == 0) return $"{Fmt(held.value)} is smaller than every shelved book.  It goes first, at the far left.";
-            if (g >= shelf.Count) return $"{Fmt(held.value)} is bigger than every shelved book.  It goes on the right end.";
-            return $"Walk {Fmt(held.value)} along the shelf from the right:  it stops after {Fmt(shelf[g - 1].value)}, before {Fmt(shelf[g].value)}.";
+            if (Solved) return "Every book is sorted.";
+            if (!sorting)
+                return held == null
+                    ? (table.Count > 0 ? $"Pick up the next book from the table:  {Fmt(table[0].value)}, the left-most one." : "")
+                    : $"Put {Fmt(held.value)} in the glowing spot {shelved + 1}.  Sorting comes after every book is shelved.";
+            if (key == null) return $"Pull out {Fmt(shelf[keyIdx].value)} (spot {keyIdx + 1}).  Everything left of it is already sorted.";
+            if (gap == 0) return $"Nothing is left of the gap:  PLACE {Fmt(key.value)} first in line.";
+            int l = shelf[gap - 1].value;
+            return l > key.value
+                ? $"{Fmt(l)} > {Fmt(key.value)}:  SHIFT {Fmt(l)} right (click it)."
+                : $"{Fmt(l)} < {Fmt(key.value)}:  PLACE {Fmt(key.value)} in the gap (click it).";
         }
 
         public override void RequestHint()
         {
             if (Solved) return;
             hintsUsed++;
-            if (held == null) { if (table.Count > 0) table[0].Flash(SortItem.HintColor, 2.2f); }
-            else
-            {
-                int g = CorrectGap(held.value);
-                if (gaps != null && g < gaps.Length && gaps[g] != null) gaps[g].Flash(new Color(0.3f, 1f, 0.45f), 2.6f);
-            }
+            SortItem show = !sorting ? (held == null && table.Count > 0 ? table[0] : null)
+                          : key == null ? shelf[keyIdx]
+                          : gap > 0 && shelf[gap - 1].value > key.value ? shelf[gap - 1] : key;
+            if (show != null) show.Flash(SortItem.HintColor, 2.2f);
             if (GameUI.Instance != null) GameUI.Instance.Flash(Hint(), SortItem.HintColor, 4.5f);
             Refresh();
         }
@@ -384,7 +489,7 @@ namespace SortOrStay
             busy = true;
             Gesture(PlayerController.GestureCheer);
             yield return new WaitForSeconds(0.3f);
-            for (int i = 0; i < shelf.Count; i++)
+            for (int i = 0; i < N; i++)
             {
                 shelf[i].Highlight(SortItem.SortedColor);
                 ProceduralSfx.Play(ProceduralSfx.Blip(i), shelf[i].transform.position, 0.7f);
@@ -409,11 +514,11 @@ namespace SortOrStay
 
             int n = items.Count;
             string body =
-                "You kept the shelf sorted the whole time and slid each new book into place, shifting the bigger ones right.  " +
-                "<b>That's insertion sort</b>, the way most people sort a hand of playing cards.\n\n" +
+                "You shelved the books in table order, then sorted the shelf where it stood:  each book was pulled out and walked left, " +
+                "bigger books shifted one place right, and it dropped into the gap.  <b>That's insertion sort</b>, the way most people sort a hand of cards.\n\n" +
                 $"Shifts  <b>{shifts}</b>        Comparisons  <b>{comparisons}</b>        Slips  <b>{mistakes}</b>        Hints  <b>{hintsUsed}</b>        Time  <b>{GameState.Clock(seconds)}</b>\n\n" +
-                $"Your {shifts} shifts equal the {startInversions} out-of-order pairs in the table's order:  every shift fixes exactly one pair.\n" +
-                $"If the table had already been in order, every book would just go on the end:  {n - 1} comparisons and zero shifts.  " +
+                $"{shifts} shifts = the {startInversions} out-of-order pairs on the shelf:  every shift fixes exactly one pair.\n" +
+                $"Already in order, every book would stay put:  {n - 1} comparisons and zero shifts.  " +
                 $"That's why insertion sort is the go-to for lists that are <b>nearly sorted</b>.  In reverse order it needs n(n−1)/2 = {n * (n - 1) / 2} shifts.";
             if (ui != null) ui.ShowPopup("THAT'S INSERTION SORT", body, "Click or press E to close  ·  then walk through the glass doors");
             busy = false;
@@ -423,27 +528,48 @@ namespace SortOrStay
 
         void Refresh()
         {
-            int n = items.Count;
-            foreach (var b in shelf) b.Highlight(SortItem.SortedColor);
-            for (int i = 0; i < table.Count; i++) table[i].Highlight(i == 0 && held == null ? NextColor : SortItem.Idle);
-            if (held != null) held.Highlight(SortItem.SelectedColor);
+            int n = N;
+            if (!sorting)
+            {
+                for (int i = 0; i < table.Count; i++) table[i].Highlight(i == 0 && held == null ? NextColor : SortItem.Idle);
+                for (int m = 0; m < n; m++) if (shelf[m] != null) shelf[m].Highlight(SortItem.Idle);   // shelved, not yet sorted
+                if (held != null) held.Highlight(SortItem.SelectedColor);
+            }
+            else
+            {
+                for (int m = 0; m < n; m++)
+                {
+                    var b = shelf[m];
+                    if (b == null) continue;
+                    Color c = SortItem.Idle;
+                    if (Solved || m < keyIdx || (key != null && m <= keyIdx)) c = SortItem.SortedColor;        // the sorted part
+                    if (!Solved && key == null && m == keyIdx) c = NextColor;                                 // pull this one out next
+                    if (key != null && gap > 0 && m == gap - 1) c = SortItem.CompareColor;                  // compared with the key
+                    b.Highlight(c);
+                }
+                if (key != null) key.Highlight(SortItem.SelectedColor);
+            }
 
             if (GameUI.Instance != null)
                 GameUI.Instance.SetStats($"SHIFTS  {shifts}      COMPARISONS  {comparisons}      HINTS  {hintsUsed}");
 
-            string holding = held != null ? $"IN HAND  {Fmt(held.value)}" : table.Count > 0 ? $"NEXT  {Fmt(table[0].value)}" : "TABLE CLEAR";
+            string step = Solved ? "ALL SORTED"
+                : !sorting ? (held != null ? $"IN HAND  {Fmt(held.value)}" : table.Count > 0 ? $"NEXT  {Fmt(table[0].value)}" : "")
+                : key != null ? $"KEY  {Fmt(key.value)}" + (gap > 0 ? $"  vs  {Fmt(shelf[gap - 1].value)}" : "")
+                : $"NEXT  {Fmt(shelf[keyIdx].value)}";
+            string phase = !sorting ? $"SHELVED  {shelved} / {n}" : $"SORTED  {Mathf.Min(keyIdx, n)} / {n}";
             if (board != null)
-                board.text = "<b>RETURN SHELF</b>\n" + $"{shelf.Count} / {n} SHELVED     {holding}";
+                board.text = (!sorting ? "<b>RETURN SHELF</b>\n" : "<b>INSERTION SORT</b>\n") + $"{phase}     {step}";
             if (terminal != null)
             {
                 string status = Solved ? "<color=#5dff7a>UNLOCKED</color>" : "<color=#ff6a5a>LOCKED</color>";
                 terminal.SetText(
                     "<b>CATALOGUE</b>   FLOOR 3\n" +
-                    "> Return every book to the\n   shelf, smallest first.\n" +
-                    "> One book at a time, in\n   table order.\n\n" +
+                    "> 1. Shelve every book in\n   table order.\n" +
+                    "> 2. Insertion sort the shelf:\n   shift bigger books right.\n\n" +
                     $"DOORS   {status}\n" +
-                    $"SHELVED {shelf.Count}/{n}   SHIFTS {shifts}\n" +
-                    $"{holding}\n\n" +
+                    $"{phase}   SHIFTS {shifts}\n" +
+                    $"{step}\n\n" +
                     "<size=80%>[ press HINT or H ]</size>");
             }
         }

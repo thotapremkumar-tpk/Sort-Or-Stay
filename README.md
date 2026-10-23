@@ -6,7 +6,7 @@ GDIT game project · Group 3 · IIIT Sri City · built with Unity 6
 
 ![Floor 1 – the Locked Room](Docs/screenshots/floor1-locked-room.jpg)
 
-You wake up locked in a five-floor building. Every floor is a room whose exit opens only when its objects are in order, and the room's rule *is* the algorithm: on Floor 1 only neighbouring keys may swap (bubble sort), on Floor 2 crate weights stay hidden until you weigh them (selection sort), on Floor 3 books arrive one by one and must be slid into the shelf (insertion sort). Every move is checked; a wrong move gets a reason, and after each floor a debrief compares your moves with the fewest possible.
+You wake up locked in a five-floor building. Every floor is a room whose exit opens only when its objects are in order, and the room's rule *is* the algorithm: on Floor 1 only neighbouring keys may swap (bubble sort), on Floor 2 crate weights stay hidden until you weigh them (selection sort), on Floor 3 the books are shelved unsorted and then sorted in place, each one walked left past bigger books (insertion sort). Every move is checked; a wrong move gets a reason, and after each floor a debrief compares your moves with the fewest possible.
 
 ## Floors
 
@@ -14,7 +14,7 @@ You wake up locked in a five-floor building. Every floor is a room whose exit op
 |---|---|---|---|---|
 | 1 | Locked Room | Bubble sort | 6 numbered keys on hooks; only neighbours may swap | Built |
 | 2 | Storage Room | Selection sort | 7 crates with hidden weights; weigh every crate left, a crane moves the lightest to the next bay | Built |
-| 3 | Library | Insertion sort | 8 books taken in table order and slid into numbered shelf gaps; bigger books shift right | Built |
+| 3 | Library | Insertion sort | 8 books shelved in table order, then sorted on the shelf: pull a book out, shift bigger books right, place it | Built |
 | 4 | Control Room | Merge sort | — | Next |
 | 5 | Vault | Quick sort | — | Planned |
 
@@ -50,8 +50,8 @@ Render pipeline: URP (Forward+), linear colour space, new Input System.
 | Scroll | Zoom |
 | WASD | Walk |
 | Space | Jump |
-| Number keys | Floor 1: pick the key on that hook · Floor 2: use the crate on that bay · Floor 3: slide the book into that gap |
-| F | Floor 3: fetch the next book |
+| Number keys | Floor 1: pick the key on that hook · Floor 2: use the crate on that bay · Floor 3: use the book (or glowing spot) at that shelf position |
+| F | Floor 3: take the next book (from the table, or out of the shelf) |
 | Q | Floor 2: weigh all remaining crates |
 | H | Hint |
 | V | First / third person |

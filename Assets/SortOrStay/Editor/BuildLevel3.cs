@@ -92,14 +92,14 @@ namespace SortOrStayEditor
             intro.player = player;
             intro.puzzle = puzzle;
             intro.overview = overview;
-            intro.objective = "Return the books to the shelf, <b>smallest number first</b>.\n" +
-                              "Take them <b>in table order</b>, one at a time, and slide each into its gap.\n" +
-                              "<size=20>Click the glowing book or press F  ·  click a blue gap or press its number  ·  H hint</size>";
+            intro.objective = "Shelve the books from the table, <b>left to right in table order</b>.\n" +
+                              "Then <b>insertion sort</b> the shelf:  pull a book out, <b>shift</b> bigger books right, <b>place</b> it.\n" +
+                              "<size=20>Click the glowing book or press F  ·  click the glowing spot or press its number  ·  H hint</size>";
             intro.lines = new[]
             {
                 "Floor 3.  A library, warm and quiet.",
-                "Eight books on the reading table.  One is already back on the shelf.",
-                "One book at a time.  Keep the shelf in order."
+                "Eight books on the reading table, and an empty return shelf.",
+                "Shelve them all first.  Then sort the shelf, one book at a time."
             };
 
             BuildStairwell(root, HD + T, H, DOOR_W, lm, "FLOOR 4", mFloor, mWall, mCeil, mWoodDark, mExit);
