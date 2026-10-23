@@ -434,7 +434,7 @@ namespace SortOrStayEditor
             Cube("Plate", new Vector3(0f, 1.0f, -0.018f), new Vector3(1.5f, 0.28f, 0.01f), mSign, g, false);
             Text("Rule", g, new Vector3(0f, 1.045f, -0.0245f), new Vector2(1.40f, 0.085f), "ONLY NEIGHBOURING KEYS MAY SWAP",
                  InkDark, TextAlignmentOptions.Center, true);
-            Text("How", g, new Vector3(0f, 0.957f, -0.0245f), new Vector2(1.40f, 0.06f), "Click a key, then click the key right next to it.",
+            Text("How", g, new Vector3(0f, 0.957f, -0.0245f), new Vector2(1.40f, 0.06f), "Compare the glowing pair: swap if the left key is bigger, else stay.",
                  InkDark, TextAlignmentOptions.Center, false);
         }
 

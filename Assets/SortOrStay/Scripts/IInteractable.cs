@@ -11,4 +11,11 @@ namespace SortOrStay
 
         void Interact();
     }
+
+    /// Things the avatar handles with its hand: it walks this close (flat metres) before using them.
+    /// Zero or less keeps the interactor's normal distances.
+    public interface IHandReach
+    {
+        float ReachDistance { get; }
+    }
 }

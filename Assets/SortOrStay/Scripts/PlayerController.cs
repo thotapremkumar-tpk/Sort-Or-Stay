@@ -56,6 +56,11 @@ namespace SortOrStay
         public float minPitch = -45f, maxPitch = 60f;
         public bool firstPerson;
 
+        [Header("Framing")]
+        public float frameLift = 0.3f;         // third person: the camera rises this much to look over the head
+        public float maxFramePull = 3f;        // furthest the camera backs off to fit a framed box
+        public float frameTurnSpeed = 4f;
+
         [Header("State")]
         public bool canMove = true;
         public bool canLook = true;
@@ -99,6 +104,8 @@ namespace SortOrStay
         public float Speed { get; private set; }
         public bool IsAutoWalking => autoWalk;
         public bool Paused => GameUI.Instance != null && GameUI.Instance.PauseOpen;
+        public HandReach Hand { get; private set; }
+        public bool Framing => frameOn;
 
         CharacterController cc;
         float yaw, pitch = 14f, vy, bodyYaw, faceYaw, faceUntil, curSpeed;
@@ -110,7 +117,16 @@ namespace SortOrStay
         Vector3[] rootRest;
         Renderer[][] bodyRenderers;
         bool forceHidden;
-        int hideState = -1;                    // 0 visible, 1 shadows only, 2 hidden
+        int hideState = -1;                    // 0 visible, 1 shadows only, 2 hidden, 3 visible without the head
+        Transform[] heads;
+        Vector3[] headScale;
+
+        // keeping a puzzle's objects in view
+        bool frameOn;
+        Bounds frameBox;
+        float frameK;                          // 0..1 eased
+        float framePull;                       // metres the camera currently backs off to fit the box
+        float manualLookUntil;                 // the player turned the camera or walked: framing waits
 
         // walking to a clicked point / thing
         bool autoWalk;
@@ -140,12 +156,16 @@ namespace SortOrStay
             eyeHeights = new float[n];
             rootRest = new Vector3[n];
             bodyRenderers = new Renderer[n][];
+            heads = new Transform[n];
+            headScale = new Vector3[n];
             for (int i = 0; i < n; i++)
             {
                 if (avatars[i] == null) continue;
                 bodyRenderers[i] = avatars[i].GetComponentsInChildren<Renderer>(true);
                 eyeHeights[i] = 1.62f;
                 var head = FindDeep(avatars[i], "Bip01 Head");
+                heads[i] = head;
+                if (head != null) headScale[i] = head.localScale;
                 if (head != null) eyeHeights[i] = Mathf.Clamp(head.position.y - transform.position.y + 0.07f, 1.35f, 1.85f);
                 if (rootBones != null && i < rootBones.Length && rootBones[i] != null)
                     rootRest[i] = avatars[i].InverseTransformPoint(rootBones[i].position);
@@ -154,6 +174,9 @@ namespace SortOrStay
             int pref = PreferredAvatar >= 0 ? PreferredAvatar : PlayerPrefs.GetInt("SortOrStay.Avatar", 0);
             SetAvatar(n > 0 ? Mathf.Clamp(pref, 0, n - 1) : 0, false);
             ApplyBodyRotation();
+
+            Hand = GetComponent<HandReach>();
+            if (Hand == null) Hand = gameObject.AddComponent<HandReach>();
         }
 
         void OnDestroy()
@@ -292,6 +315,16 @@ namespace SortOrStay
             camT = len > 0.001f ? CastDistance(pivot, dir, len) / len : 1f;
             if (!cinematic) PlaceCamera(Time.deltaTime, true);
         }
+
+        /// Keep every point of this box in view: the camera turns toward it and backs off (in first or third
+        /// person) until it all fits. A puzzle calls this every frame while the player works at it.
+        public void FrameBounds(Bounds box)
+        {
+            frameBox = box;
+            frameOn = true;
+        }
+
+        public void ClearFrame() { frameOn = false; }
 
         // ------------------------------------------------------------ walking to a target
 
@@ -459,6 +492,20 @@ namespace SortOrStay
                 }
                 yaw += d.x;
                 pitch = Mathf.Clamp(pitch - d.y, minPitch, maxPitch);
+                if (d.sqrMagnitude > 0.0001f) manualLookUntil = Time.time + 2f;
+            }
+
+            // ---- framing: ease the view toward the framed box unless the player is steering the camera
+            if (frameOn && !cinematic && !paused && cam != null && Time.time > manualLookUntil)
+            {
+                Vector3 to = frameBox.center - cam.transform.position;
+                float flat = new Vector2(to.x, to.z).magnitude;
+                if (flat > 0.05f)
+                {
+                    float f = 1f - Mathf.Exp(-frameTurnSpeed * Time.deltaTime);
+                    yaw = Mathf.LerpAngle(yaw, Mathf.Atan2(to.x, to.z) * Mathf.Rad2Deg, f);
+                    pitch = Mathf.Clamp(Mathf.LerpAngle(pitch, -Mathf.Atan2(to.y, flat) * Mathf.Rad2Deg, f), minPitch, maxPitch);
+                }
             }
 
             // ---- move (camera-relative), or follow the path to something that was clicked
@@ -474,7 +521,7 @@ namespace SortOrStay
                 if (wish.sqrMagnitude > 1f) wish.Normalize();
                 run = kb.leftShiftKey.isPressed || kb.rightShiftKey.isPressed;
             }
-            if (wish.sqrMagnitude > 0.0001f) { if (autoWalk) StopWalking(); }
+            if (wish.sqrMagnitude > 0.0001f) { if (autoWalk) StopWalking(); manualLookUntil = Time.time + 1f; }
             else if (autoWalk && canMove && !cinematic && !paused) { wish = AutoWalkStep(); driving = true; }
             else if (autoWalk && (cinematic || !canMove)) StopWalking();
 
@@ -514,6 +561,10 @@ namespace SortOrStay
 
             if (!cinematic) PlaceCamera(Time.deltaTime, false);
             UpdateVisibility();
+
+            // first person with the camera backed off to frame a puzzle: the body shows (so the hands do), the head does not
+            if (heads != null && AvatarIndex < heads.Length && heads[AvatarIndex] != null)
+                heads[AvatarIndex].localScale = hideState == 3 ? headScale[AvatarIndex] * 0.001f : headScale[AvatarIndex];
         }
 
         // ------------------------------------------------------------ camera
@@ -535,7 +586,9 @@ namespace SortOrStay
         void PlaceCamera(float dt, bool snap)
         {
             if (cam == null) return;
-            Vector3 pivot = transform.position + Vector3.up * pivotHeight;
+            frameK = Mathf.MoveTowards(frameK, frameOn ? 1f : 0f, dt * 1.5f);
+            float fk = Mathf.SmoothStep(0f, 1f, frameK);
+            Vector3 pivot = transform.position + Vector3.up * (pivotHeight + frameLift * fk * viewBlend);
             Quaternion rot = Quaternion.Euler(pitch, yaw, 0f);
             if (cameraPivot != null) { cameraPivot.position = pivot; cameraPivot.rotation = rot; }
 
@@ -551,8 +604,36 @@ namespace SortOrStay
 
             Vector3 eye = transform.position + Vector3.up * EyeHeight + Quaternion.Euler(0f, yaw, 0f) * new Vector3(0f, 0f, 0.12f);
             Vector3 third = pivot + dir * (len * camT);
-            cam.transform.position = Vector3.Lerp(eye, third, k);
+            Vector3 pos = Vector3.Lerp(eye, third, k);
+
+            // back straight off (stopping at walls) until the whole framed box fits on screen
+            float need = fk > 0f ? Mathf.Min(FitPullBack(pos, rot), maxFramePull) * fk : 0f;
+            framePull = snap ? need : Mathf.Lerp(framePull, need, 1f - Mathf.Exp(-5f * dt));
+            if (framePull > 0.005f)
+            {
+                Vector3 back = rot * Vector3.back;
+                pos += back * Mathf.Min(framePull, CastDistance(pos, back, framePull));
+            }
+
+            cam.transform.position = pos;
             cam.transform.rotation = rot;
+        }
+
+        /// How far the camera must move back along its view axis so all eight corners of the framed box are on screen.
+        float FitPullBack(Vector3 pos, Quaternion rot)
+        {
+            float tanV = Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad) * 0.88f;   // a little margin
+            float tanH = tanV * cam.aspect;
+            Quaternion inv = Quaternion.Inverse(rot);
+            Vector3 c = frameBox.center, e = frameBox.extents;
+            float need = 0f;
+            for (int i = 0; i < 8; i++)
+            {
+                Vector3 corner = c + new Vector3((i & 1) == 0 ? -e.x : e.x, (i & 2) == 0 ? -e.y : e.y, (i & 4) == 0 ? -e.z : e.z);
+                Vector3 l = inv * (corner - pos);
+                need = Mathf.Max(need, Mathf.Abs(l.x) / tanH - l.z, Mathf.Abs(l.y) / tanV - l.z);
+            }
+            return need;
         }
 
         void UpdateVisibility()
@@ -563,7 +644,8 @@ namespace SortOrStay
             else if (cam != null)
             {
                 Vector3 head = transform.position + Vector3.up * (EyeHeight - 0.05f);
-                if (Vector3.Distance(cam.transform.position, head) < 0.42f || (firstPerson && viewBlend < 0.35f)) state = 1;
+                bool close = Vector3.Distance(cam.transform.position, head) < 0.42f || (firstPerson && viewBlend < 0.35f);
+                if (close) state = firstPerson && framePull > 0.6f ? 3 : 1;
             }
             if (state == hideState) return;
             hideState = state;

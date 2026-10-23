@@ -8513,7 +8513,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Click a key, then click the key right next to it.
+  m_text: Compare the glowing pair: swap if the left key is bigger, else stay.
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
@@ -17198,7 +17198,7 @@ MonoBehaviour:
   player: {fileID: 2003999384}
   puzzle: {fileID: 2074494082}
   playIntro: 1
-  objective: "Hang the 6 keys from <b>smallest to largest</b>.\nYou may only swap two <b>neighbouring</b> keys.\n<size=20>Click a key, then the key next to it  \xB7  or press two hook numbers (1-6)  \xB7  H hint</size>"
+  objective: "Sort the 6 keys from <b>smallest to largest</b>, the bubble sort way.\nCompare the <b>glowing pair</b>:  <b>swap</b> if the left key is bigger, otherwise they <b>stay</b>.\n<size=20>Pick up a glowing key, then click its neighbour (swap) or the same key (stay)  \xB7  hook numbers 1-6  \xB7  H hint</size>"
   lines:
   - ...ugh. Where am I?
   - One steel door. Six numbered keys on a rack.

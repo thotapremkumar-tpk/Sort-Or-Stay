@@ -6,7 +6,7 @@ namespace SortOrStay
 {
     /// Any object that has a value to sort (here: a numbered key on the rack).
     /// Clicking it is forwarded to the puzzle that owns it.
-    public class SortItem : MonoBehaviour, IInteractable
+    public class SortItem : MonoBehaviour, IInteractable, IHandReach
     {
         public int value;
         public TMP_Text label;            // number on the key tag
@@ -14,6 +14,7 @@ namespace SortOrStay
         public Renderer tagRenderer;      // the paper tag; tinted and glows with the key state
         public Transform swing;           // pivot the key swings around on its hook
         public bool tintModel = true;     // false: only the tag changes colour (books keep their cover colour)
+        public float reachDistance;       // > 0: the avatar walks this close and takes it by hand
         [HideInInspector] public SortPuzzleBase puzzle;
 
         public static readonly Color Idle = Color.white;
@@ -21,6 +22,7 @@ namespace SortOrStay
         public static readonly Color SortedColor = new Color(0.25f, 1f, 0.4f);
         public static readonly Color ErrorColor = new Color(1f, 0.22f, 0.18f);
         public static readonly Color HintColor = new Color(0.25f, 0.85f, 1f);
+        public static readonly Color CompareColor = new Color(0.55f, 0.7f, 1f);
         static readonly Color TagBase = new Color(0.93f, 0.9f, 0.82f);
 
         readonly List<Material> modelMats = new List<Material>();
@@ -131,6 +133,7 @@ namespace SortOrStay
         // IInteractable
         public string Prompt => puzzle != null ? puzzle.PromptFor(this) : "";
         public bool CanInteract => puzzle != null && puzzle.CanUse(this);
+        public float ReachDistance => reachDistance;
         public void Interact()
         {
             if (puzzle != null) puzzle.OnItemClicked(this);

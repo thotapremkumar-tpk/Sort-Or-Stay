@@ -4,8 +4,10 @@ using UnityEngine.InputSystem;
 
 namespace SortOrStay
 {
-    /// Floor 1. Six keys on hooks; the player may only swap two neighbours.
-    /// Escaping means doing bubble sort by hand.
+    /// Floor 1. Six keys on hooks, sorted the way bubble sort does it: pass after pass, the room points at
+    /// one pair of neighbours at a time, left to right. The player picks up a key of that pair and decides:
+    /// click its neighbour to swap them (the left one is bigger) or click the same key again to let them stay.
+    /// At the end of each pass the biggest unsorted key has bubbled to the right and is locked in place.
     public class BubblePuzzle : SortPuzzleBase
     {
         [Header("Deal")]
@@ -20,10 +22,23 @@ namespace SortOrStay
         public Color ledOn = new Color(0.25f, 1f, 0.4f);
         public Color ledOff = new Color(0.05f, 0.05f, 0.05f);
 
+        [Header("Hand and camera")]
+        [Tooltip("The avatar walks this close to a key and takes it by hand.")]
+        public float handReach = 0.55f;
+        [Tooltip("Within this distance of the rack the camera keeps all keys in view.")]
+        public float frameRange = 2.8f;
+
         SortItem selected;
         int startInversions;
-        int wrongWaySwaps;
+        int pass, cmp;                       // bubble sort cursor: pass number and left index of the pair being compared
+        int passSwaps;
         Material[] ledMats;
+        Bounds keyBox;
+        bool framing;
+        Coroutine lift;                      // the picked-up key sliding off / back onto its hook
+
+        int N => items.Count;
+        static HandReach Hand => PlayerController.Instance != null ? PlayerController.Instance.Hand : null;
 
         void Start()
         {
@@ -37,6 +52,15 @@ namespace SortOrStay
                     ledMats[i].EnableKeyword("_EMISSION");
                 }
             }
+
+            // every key, its tag and the SMALLEST / LARGEST labels: what the camera keeps in view at the rack
+            keyBox = new Bounds(slots[0].position, Vector3.zero);
+            foreach (var s in slots)
+            {
+                keyBox.Encapsulate(s.position + Vector3.up * 0.35f);
+                keyBox.Encapsulate(s.position + Vector3.down * 0.42f);
+            }
+            keyBox.Expand(new Vector3(0.3f, 0.06f, 0.2f));
             Setup();
         }
 
@@ -60,16 +84,20 @@ namespace SortOrStay
             for (int i = 0; i < n; i++)
             {
                 items[i].puzzle = this;
+                items[i].reachDistance = handReach;
                 items[i].Init(vals[i]);
                 items[i].transform.position = slots[i].position;
             }
 
             startInversions = CountInversions(vals);
-            comparisons = swaps = hintsUsed = wrongWaySwaps = mistakes = 0;
+            comparisons = swaps = hintsUsed = mistakes = 0;
+            pass = cmp = passSwaps = 0;
             selected = null;
+            if (Hand != null) Hand.Release();
             Solved = false;
             busy = false;
             startTime = Time.time;
+            ShowCursor();
             Refresh();
         }
 
@@ -82,117 +110,218 @@ namespace SortOrStay
                 ProceduralSfx.PlayUI(ProceduralSfx.Hint, 0.7f);
                 RequestHint();
             }
-            // number keys pick the key on that hook (1 = left-most): press two neighbours to swap them
+            // number keys pick the key on that hook (1 = left-most): the same number again = stay, its neighbour = swap
             int d = DigitPressed(kb);
             if (d >= 1 && d <= items.Count && ShortcutsAllowed() && !(kb.leftCtrlKey.isPressed)) UseByKey(items[d - 1]);
 
+            var pc = Player;
+            if (pc != null)
+            {
+                // keep every key on screen while the player works at the rack (first and third person)
+                Vector3 off = pc.transform.position - keyBox.center;
+                off.y = 0f;
+                bool want = !Solved && inputEnabled && off.magnitude < frameRange;
+                if (want) { pc.FrameBounds(keyBox); framing = true; }
+                else if (framing) { pc.ClearFrame(); framing = false; }
+
+                // walked away holding a key: hang it back up
+                if (selected != null && !busy && Vector3.Distance(pc.Chest, selected.transform.position) > 1.6f) PutDown();
+            }
+
 #if UNITY_EDITOR
-            // play-testing shortcut (editor only): Ctrl+N performs the next correct swap
+            // play-testing shortcut (editor only): Ctrl+N makes the next correct bubble sort move
             if (kb != null && kb.leftCtrlKey.isPressed && kb.nKey.wasPressedThisFrame && AcceptsInput && !popup)
             {
-                int k = FirstOutOfOrderPair();
-                if (k >= 0) { comparisons++; StartCoroutine(SwapRoutine(k, k + 1)); Refresh(); }
+                if (selected != items[cmp] && selected != items[cmp + 1]) { PutDown(); Select(items[cmp]); }
+                Decide(items[cmp].value > items[cmp + 1].value);
             }
 #endif
         }
 
-        // ------------------------------------------------------------ the mechanic (as in the guide)
+        // ------------------------------------------------------------ the mechanic: one compare at a time
+
+        bool InPair(int idx) => idx == cmp || idx == cmp + 1;
+        bool IsFinal(int idx) => idx >= N - pass;          // already bubbled into place by an earlier pass
+
+        Vector3 Grip => Vector3.down * 0.09f + slots[0].forward * 0.02f;
 
         public override void OnItemClicked(SortItem clicked)
         {
             if (!AcceptsInput) return;
+            int idx = items.IndexOf(clicked);
 
             if (selected == null)
             {
-                selected = clicked;
-                clicked.Highlight(SortItem.SelectedColor);
-                clicked.Kick(25f);
-                ProceduralSfx.Play(ProceduralSfx.Select, clicked.transform.position, 0.6f);
+                if (InPair(idx)) Select(clicked); else NotThisPair(clicked, idx);
                 return;
             }
+            if (clicked == selected) { Decide(false); return; }          // same key again: they stay
+            if (InPair(idx)) Decide(true);                               // its neighbour in the pair: swap
+            else NotThisPair(clicked, idx);
+        }
 
-            if (clicked == selected)                       // click the same key again to put it down
-            {
-                selected.Highlight(SortItem.Idle);
-                selected = null;
-                return;
-            }
+        void Select(SortItem key)
+        {
+            selected = key;
+            key.Highlight(SortItem.SelectedColor);
+            key.Kick(25f);
+            ProceduralSfx.Play(ProceduralSfx.Select, key.transform.position, 0.6f);
+            if (Hand != null) Hand.Hold(key.transform, Grip);
+            int i = items.IndexOf(key);
+            Lift(key, slots[i].position + slots[i].forward * 0.07f + Vector3.up * 0.03f);
+        }
 
-            int i = items.IndexOf(selected), j = items.IndexOf(clicked);
-            comparisons++;
-
-            if (Mathf.Abs(i - j) != 1)
-            {
-                clicked.Flash(SortItem.ErrorColor, 0.6f);
-                selected.Flash(SortItem.ErrorColor, 0.6f);
-                ProceduralSfx.Play(ProceduralSfx.Error, clicked.transform.position, 0.7f);
-                mistakes++;
-                Gesture(PlayerController.GestureScratch);
-                if (GameUI.Instance != null) GameUI.Instance.Flash("Only neighbours can swap.");
-            }
-            else
-            {
-                int lo = Mathf.Min(i, j), hi = Mathf.Max(i, j);
-                if (items[lo].value < items[hi].value)
-                {
-                    wrongWaySwaps++;
-                    mistakes++;
-                    if (GameUI.Instance != null)
-                        GameUI.Instance.Flash($"{items[lo].value} and {items[hi].value} were already in order.  Bubble sort only swaps when the left key is bigger.",
-                                              new Color(1f, 0.8f, 0.4f), 3.2f);
-                }
-                StartCoroutine(SwapRoutine(lo, hi));
-            }
-
-            selected.Highlight(SortItem.Idle);
+        void PutDown()
+        {
+            if (selected == null) return;
+            int i = items.IndexOf(selected);
+            Lift(selected, slots[i].position);
             selected = null;
+            if (Hand != null) Hand.Release();
+            ShowCursor();
+        }
+
+        void Lift(SortItem key, Vector3 to)
+        {
+            if (lift != null) StopCoroutine(lift);
+            lift = StartCoroutine(MoveTo(key, to, 0.22f));
+        }
+
+        void NotThisPair(SortItem clicked, int idx)
+        {
+            clicked.Flash(SortItem.ErrorColor, 0.5f);
+            items[cmp].Kick(30f);
+            items[cmp + 1].Kick(-30f);
+            ProceduralSfx.Play(ProceduralSfx.Error, clicked.transform.position, 0.4f);
+            if (GameUI.Instance == null) return;
+            if (IsFinal(idx))
+                GameUI.Instance.Flash($"Key {clicked.value} already bubbled to its final place.  Compare the glowing pair.", SortItem.CompareColor, 3f);
+            else
+                GameUI.Instance.Flash($"Bubble sort compares one pair at a time, left to right.  Now: hooks {cmp + 1} and {cmp + 2}  (keys {items[cmp].value} and {items[cmp + 1].value}).",
+                                      SortItem.CompareColor, 3.2f);
+        }
+
+        /// The player's call on the current pair: swap (true) or stay (false).
+        void Decide(bool swap)
+        {
+            int a = items[cmp].value, b = items[cmp + 1].value;
+            if (swap != a > b)
+            {
+                mistakes++;
+                items[cmp].Flash(SortItem.ErrorColor, 0.6f);
+                items[cmp + 1].Flash(SortItem.ErrorColor, 0.6f);
+                ProceduralSfx.Play(ProceduralSfx.Error, items[cmp].transform.position, 0.7f);
+                Gesture(PlayerController.GestureScratch);
+                if (GameUI.Instance != null)
+                    GameUI.Instance.Flash(swap
+                        ? $"{a} is smaller than {b}: they are already in order.  Click the key you're holding again to let them stay."
+                        : $"{a} is bigger than {b} and sits on the left.  Swap them: click the other glowing key.",
+                        new Color(1f, 0.8f, 0.4f), 3.4f);
+                Refresh();
+                return;                                                  // still holding the key: decide again
+            }
+
+            comparisons++;
+            if (swap) StartCoroutine(SwapRoutine(cmp, cmp + 1));
+            else StartCoroutine(StayRoutine(a, b));
             Refresh();
+        }
+
+        IEnumerator StayRoutine(int a, int b)
+        {
+            busy = true;
+            ProceduralSfx.Play(ProceduralSfx.Blip(cmp), items[cmp].transform.position, 0.6f);
+            if (GameUI.Instance != null) GameUI.Instance.Info($"{a} < {b}:  they stay.");
+            var key = selected;
+            int i = items.IndexOf(key);
+            selected = null;
+            key.Highlight(SortItem.Idle);
+            if (lift != null) StopCoroutine(lift);
+            yield return MoveTo(key, slots[i].position, 0.22f);
+            if (Hand != null) Hand.Release();
+            key.Kick(-20f);
+            busy = false;
+            Advance();
         }
 
         IEnumerator SwapRoutine(int i, int j)
         {
             busy = true;
             swaps++;
+            passSwaps++;
+            var carried = selected;                       // the hand keeps hold of the key it picked up
+            if (carried == null) { carried = items[i]; if (Hand != null) Hand.Hold(carried.transform, Grip); }
+            selected = null;
+            if (lift != null) StopCoroutine(lift);
             (items[i], items[j]) = (items[j], items[i]);
+            items[i].Highlight(SortItem.CompareColor);
+            items[j].Highlight(SortItem.CompareColor);
 
             ProceduralSfx.Play(ProceduralSfx.Swap, slots[i].position, 0.8f);
             Vector3 outward = slots[i].forward;          // into the room, toward the player
-            StartCoroutine(ArcTo(items[i], slots[i].position, outward * 0.10f + Vector3.up * 0.04f));
-            yield return ArcTo(items[j], slots[j].position, outward * 0.05f - Vector3.up * 0.03f);
+            var other = carried == items[i] ? items[j] : items[i];
+            int carriedTo = items.IndexOf(carried), otherTo = items.IndexOf(other);
+            StartCoroutine(ArcTo(other, slots[otherTo].position, outward * 0.04f - Vector3.up * 0.03f));
+            yield return ArcTo(carried, slots[carriedTo].position, outward * 0.11f + Vector3.up * 0.04f, 0.55f);
+            if (Hand != null) Hand.Release();
 
             items[i].Kick(-60f);
             items[j].Kick(60f);
             busy = false;
-            Refresh();
+            Advance();
             CheckWin();
+        }
+
+        /// Move the compare cursor one pair right; at the sorted tail the pass ends and the next one starts.
+        void Advance()
+        {
+            cmp++;
+            if (cmp >= N - 1 - pass)
+            {
+                int fin = N - 1 - pass;
+                items[fin].Kick(35f);
+                ProceduralSfx.Play(ProceduralSfx.Blip(5), items[fin].transform.position, 0.7f);
+                if (GameUI.Instance != null && !IsSorted())
+                    GameUI.Instance.Flash($"Pass {pass + 1} done:  {items[fin].value} bubbled to the end and is locked in place.  Pass {pass + 2} starts from the left.",
+                                          SortItem.SortedColor, 3.4f);
+                pass++;
+                cmp = 0;
+                passSwaps = 0;
+                if (pass >= N - 1) pass = N - 1;
+            }
+            ShowCursor();
+            Refresh();
+        }
+
+        /// Colours: the pair being compared glows, keys a pass has fixed in place are green.
+        void ShowCursor()
+        {
+            for (int i = 0; i < N; i++)
+            {
+                if (items[i] == selected) continue;
+                items[i].Highlight(IsFinal(i) ? SortItem.SortedColor : InPair(i) && !Solved ? SortItem.CompareColor : SortItem.Idle);
+            }
         }
 
         // ------------------------------------------------------------ hints
 
-        int FirstOutOfOrderPair()
-        {
-            for (int k = 0; k < items.Count - 1; k++)
-                if (items[k].value > items[k + 1].value) return k;
-            return -1;
-        }
-
         public override string Hint()
         {
-            int k = FirstOutOfOrderPair();
-            if (k < 0) return "The keys are already in order.";
-            int a = items[k].value, b = items[k + 1].value;
-            return $"Look at {a} and {b}:  {a} is bigger but sits on the left.  Swap them.";
+            if (IsSorted()) return "The keys are already in order.";
+            int a = items[cmp].value, b = items[cmp + 1].value;
+            return a > b
+                ? $"Pass {pass + 1}:  compare {a} and {b}.  {a} is bigger and on the left, so swap them."
+                : $"Pass {pass + 1}:  compare {a} and {b}.  {a} is smaller, so they stay:  pick one up and click it again.";
         }
 
         public override void RequestHint()
         {
-            int k = FirstOutOfOrderPair();
-            if (k < 0) return;
+            if (IsSorted()) return;
             hintsUsed++;
-            items[k].Flash(SortItem.HintColor, 2.2f);
-            items[k + 1].Flash(SortItem.HintColor, 2.2f);
-            items[k].Kick(30f);
-            items[k + 1].Kick(-30f);
+            items[cmp].Flash(SortItem.HintColor, 2.2f);
+            items[cmp + 1].Flash(SortItem.HintColor, 2.2f);
+            items[cmp].Kick(30f);
+            items[cmp + 1].Kick(-30f);
             if (GameUI.Instance != null) GameUI.Instance.Flash(Hint(), SortItem.HintColor, 4f);
             Refresh();
         }
@@ -200,11 +329,13 @@ namespace SortOrStay
         public override string PromptFor(SortItem item)
         {
             if (!AcceptsInput) return "";
-            string key = $"   [{items.IndexOf(item) + 1}]";
-            if (selected == null) return $"Pick up key {item.value}" + key;
-            if (item == selected) return $"Put key {item.value} back" + key;
-            int i = items.IndexOf(selected), j = items.IndexOf(item);
-            return (Mathf.Abs(i - j) == 1 ? $"Swap {selected.value} with {item.value}" : $"Key {item.value} is not next to {selected.value}") + key;
+            int idx = items.IndexOf(item);
+            string key = $"   [{idx + 1}]";
+            if (IsFinal(idx)) return $"Key {item.value} is in its final place" + key;
+            if (!InPair(idx)) return $"Key {item.value}: not compared yet  (the glowing pair is next)" + key;
+            if (selected == null) return $"Pick up key {item.value} to compare {items[cmp].value} and {items[cmp + 1].value}" + key;
+            if (item == selected) return $"Stay:  keep {items[cmp].value} before {items[cmp + 1].value}" + key;
+            return $"Swap {selected.value} with {item.value}" + key;
         }
 
         // ------------------------------------------------------------ win
@@ -215,6 +346,7 @@ namespace SortOrStay
         {
             busy = true;
             if (selected != null) { selected.Highlight(SortItem.Idle); selected = null; }
+            if (Hand != null) Hand.Release();
             Gesture(PlayerController.GestureCheer);
             yield return new WaitForSeconds(0.25f);
 
@@ -230,12 +362,13 @@ namespace SortOrStay
 
             if (door != null) door.Unlock();
             float seconds = Time.time - startTime;
+            int passes = pass + (cmp > 0 ? 1 : 0);
             GameState.Instance.Record(new LevelResult
             {
                 level = 1, algorithm = "Bubble sort",
                 comparisons = comparisons, swaps = swaps, minSwaps = startInversions,
                 hints = hintsUsed, mistakes = mistakes, seconds = seconds,
-                detail = $"{swaps} swaps (fewest {startInversions})  ·  {comparisons} comparisons"
+                detail = $"{swaps} swaps (fewest {startInversions})  ·  {comparisons} comparisons in {passes} passes"
             });
             Refresh();
 
@@ -244,16 +377,17 @@ namespace SortOrStay
             yield return new WaitForSeconds(1.4f);
 
             int n = items.Count;
-            string extra = wrongWaySwaps > 0
-                ? $"\n\n{wrongWaySwaps} of your swaps broke a pair that was already in order.  Each one added two swaps: the mistake and the fix.  Bubble sort never makes that move."
-                : swaps == startInversions ? "\n\nYou matched it exactly, just like bubble sort would." : "";
+            string extra = mistakes > 0
+                ? $"\n\n{mistakes} of your calls were wrong (a swap of keys already in order, or a stay when the left key was bigger).  Bubble sort never makes those moves."
+                : "\n\nEvery call was right, exactly what bubble sort would do.";
             string body =
-                "You compared neighbours and pushed the biggest key to the end each pass.  <b>That's bubble sort.</b>\n\n" +
-                $"Your swaps  <b>{swaps}</b>        Fewest possible  <b>{startInversions}</b>\n" +
-                $"Comparisons  <b>{comparisons}</b>        Hints  <b>{hintsUsed}</b>        Time  <b>{Mathf.FloorToInt(seconds / 60f)}:{Mathf.FloorToInt(seconds % 60f):00}</b>\n\n" +
-                $"Why {startInversions}?  The keys started with {startInversions} out-of-order pairs.  Every neighbour swap fixes exactly one, " +
-                "so that is the floor, and bubble sort always lands on it." + extra +
-                $"\n\nA computer running bubble sort on {n} keys checks up to {n * (n - 1) / 2} neighbour pairs, n(n-1)/2.  Simple, but slow as the list grows.";
+                "Pass after pass you compared neighbours from left to right: swap when the left key is bigger, otherwise let them stay.  " +
+                "Each pass pushed the biggest remaining key to the end.  <b>That's bubble sort.</b>\n\n" +
+                $"Passes  <b>{passes}</b>        Comparisons  <b>{comparisons}</b>        Swaps  <b>{swaps}</b>  (fewest possible  <b>{startInversions}</b>)\n" +
+                $"Hints  <b>{hintsUsed}</b>        Time  <b>{Mathf.FloorToInt(seconds / 60f)}:{Mathf.FloorToInt(seconds % 60f):00}</b>\n\n" +
+                $"Why {startInversions} swaps?  The keys started with {startInversions} out-of-order pairs and every neighbour swap fixes exactly one." + extra +
+                $"\n\nA computer running bubble sort on {n} keys makes up to {n - 1} passes and {n * (n - 1) / 2} comparisons, n(n-1)/2, " +
+                "and one last pass with no swaps to know it is done.  Simple, but slow as the list grows.";
             if (ui != null) ui.ShowPopup("THAT'S BUBBLE SORT", body, "Click or press E to close  ·  then walk through the door");
             busy = false;
         }
@@ -279,7 +413,9 @@ namespace SortOrStay
             }
 
             if (GameUI.Instance != null)
-                GameUI.Instance.SetStats($"SWAPS  {swaps}      COMPARISONS  {comparisons}      HINTS  {hintsUsed}");
+                GameUI.Instance.SetStats(Solved
+                    ? $"SWAPS  {swaps}      COMPARISONS  {comparisons}      HINTS  {hintsUsed}"
+                    : $"PASS  {pass + 1}      COMPARING  {items[cmp].value} · {items[cmp + 1].value}      SWAPS  {swaps}      COMPARISONS  {comparisons}      HINTS  {hintsUsed}");
 
             if (terminal != null)
             {
@@ -287,10 +423,11 @@ namespace SortOrStay
                 terminal.SetText(
                     "<b>SECURITY TERMINAL</b>   FLOOR 1\n" +
                     "> ORDER UNLOCKS.\n" +
-                    "> Arrange the keys from\n   smallest to largest.\n\n" +
+                    "> Arrange the keys from\n   smallest to largest.\n" +
                     $"STATUS   {status}\n" +
+                    (Solved ? "" : $"PASS {pass + 1}   COMPARE  {cmp + 1}-{cmp + 2}\n") +
                     $"KEYS IN PLACE   {correct}/{n}\n" +
-                    $"SWAPS   {swaps}\n\n" +
+                    $"SWAPS   {swaps}   COMPARES   {comparisons}\n\n" +
                     "<size=80%>[ press HINT or H ]</size>");
             }
         }

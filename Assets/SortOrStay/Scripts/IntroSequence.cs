@@ -13,8 +13,9 @@ namespace SortOrStay
         public bool playIntro = true;
 
         [TextArea] public string objective =
-            "Hang the 6 keys from <b>smallest to largest</b>.\nYou may only swap two <b>neighbouring</b> keys.\n" +
-            "<size=20>Click a key, then the key next to it  ·  or press two hook numbers (1-6)  ·  H hint</size>";
+            "Sort the 6 keys from <b>smallest to largest</b>, the bubble sort way.\n" +
+            "Compare the <b>glowing pair</b>:  <b>swap</b> if the left key is bigger, otherwise they <b>stay</b>.\n" +
+            "<size=20>Pick up a glowing key, then click its neighbour (swap) or the same key (stay)  ·  hook numbers 1-6  ·  H hint</size>";
 
         public string[] lines =
         {

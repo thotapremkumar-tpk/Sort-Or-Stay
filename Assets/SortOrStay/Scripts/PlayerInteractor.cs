@@ -59,7 +59,8 @@ namespace SortOrStay
                 {
                     string p = it.Prompt;
                     float d = Flat(transform.position, ClosestPoint(col, transform.position));
-                    if (!string.IsNullOrEmpty(p) && d > useDistance) p += "   (walks over)";
+                    float use = it is IHandReach hr && hr.ReachDistance > 0f ? hr.ReachDistance : useDistance;
+                    if (!string.IsNullOrEmpty(p) && d > use) p += "   (walks over)";
                     ui.prompt = p;
                 }
             }
@@ -130,8 +131,10 @@ namespace SortOrStay
         public void Use(IInteractable it, Collider col)
         {
             if (it == null || col == null || !it.CanInteract) return;
+            float use = useDistance, approach = approachDistance;
+            if (it is IHandReach hr && hr.ReachDistance > 0f) { use = hr.ReachDistance; approach = Mathf.Min(approach, hr.ReachDistance * 0.75f); }
             Vector3 p = ClosestPoint(col, transform.position);
-            if (Flat(transform.position, p) <= useDistance || controller == null || !controller.canMove)
+            if (Flat(transform.position, p) <= use || controller == null || !controller.canMove)
             {
                 pendingTarget = null;
                 if (controller != null) { controller.StopWalking(); controller.FaceTowards(p); }
@@ -142,7 +145,7 @@ namespace SortOrStay
             var comp = it as Component;
             pendingTarget = comp;
             pendingCol = col;
-            controller.WalkTo(p, approachDistance, () =>
+            controller.WalkTo(p, approach, () =>
             {
                 if (pendingTarget != comp) return;
                 pendingTarget = null;
