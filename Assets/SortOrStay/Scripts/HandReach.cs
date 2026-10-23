@@ -38,9 +38,9 @@ namespace SortOrStay
                 if (pc.avatars[i] == null) continue;
                 for (int s = 0; s < 2; s++)
                 {
-                    upper[i, s] = FindDeep(pc.avatars[i], Prefix[s] + "UpperArm");
-                    lower[i, s] = FindDeep(pc.avatars[i], Prefix[s] + "Forearm");
-                    hand[i, s] = FindDeep(pc.avatars[i], Prefix[s] + "Hand");
+                    upper[i, s] = TwoBoneIK.FindDeep(pc.avatars[i], Prefix[s] + "UpperArm");
+                    lower[i, s] = TwoBoneIK.FindDeep(pc.avatars[i], Prefix[s] + "Forearm");
+                    hand[i, s] = TwoBoneIK.FindDeep(pc.avatars[i], Prefix[s] + "Hand");
                 }
             }
         }
@@ -91,45 +91,12 @@ namespace SortOrStay
             if (faceCount > 0 && !pc.firstPerson && pc.Speed < 0.1f) pc.FaceTowards(faceSum / faceCount);
         }
 
-        /// Two-bone solve: place the elbow with the law of cosines (bending down and out from the body),
-        /// aim the forearm at the goal, then blend from the animated rotations by w.
+        /// Each elbow hangs down and out to its own side.
         void Solve(int side, Transform up, Transform low, Transform h, Vector3 goal, float w)
         {
-            Quaternion upAnim = up.localRotation, lowAnim = low.localRotation;
-
-            Vector3 a = up.position;
-            float l1 = Vector3.Distance(a, low.position);
-            float l2 = Vector3.Distance(low.position, h.position);
-            Vector3 to = goal - a;
-            float dist = Mathf.Clamp(to.magnitude, Mathf.Abs(l1 - l2) + 0.01f, (l1 + l2) * 0.995f);
-            Vector3 dir = to.sqrMagnitude > 1e-6f ? to.normalized : pc.Body.forward;
-
             Transform body = pc.Body;
             float outward = side == Right ? 0.6f : -0.6f;
-            Vector3 pole = -body.up + body.right * outward - body.forward * 0.2f;   // elbow hangs down and out to its side
-            Vector3 bend = Vector3.ProjectOnPlane(pole, dir);
-            bend = bend.sqrMagnitude > 1e-6f ? bend.normalized : -body.up;
-
-            float along = (l1 * l1 - l2 * l2 + dist * dist) / (2f * dist);
-            float sideLen = Mathf.Sqrt(Mathf.Max(0f, l1 * l1 - along * along));
-            Vector3 elbow = a + dir * along + bend * sideLen;
-
-            up.rotation = Quaternion.FromToRotation(low.position - a, elbow - a) * up.rotation;
-            low.rotation = Quaternion.FromToRotation(h.position - low.position, a + dir * dist - low.position) * low.rotation;
-
-            up.localRotation = Quaternion.Slerp(upAnim, up.localRotation, w);
-            low.localRotation = Quaternion.Slerp(lowAnim, low.localRotation, w);
-        }
-
-        static Transform FindDeep(Transform root, string name)
-        {
-            if (root.name == name) return root;
-            for (int i = 0; i < root.childCount; i++)
-            {
-                var r = FindDeep(root.GetChild(i), name);
-                if (r != null) return r;
-            }
-            return null;
+            TwoBoneIK.Solve(up, low, h, goal, -body.up + body.right * outward - body.forward * 0.2f, w);
         }
     }
 }

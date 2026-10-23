@@ -49,6 +49,7 @@ Render pipeline: URP (Forward+), linear colour space, new Input System.
 | Right-drag / arrow keys | Turn the camera |
 | Scroll | Zoom |
 | WASD | Walk |
+| Space | Jump |
 | Number keys | Floor 1: pick the key on that hook · Floor 2: use the crate on that bay · Floor 3: slide the book into that gap |
 | F | Floor 3: fetch the next book |
 | Q | Floor 2: weigh all remaining crates |

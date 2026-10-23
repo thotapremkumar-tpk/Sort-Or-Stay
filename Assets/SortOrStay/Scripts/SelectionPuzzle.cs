@@ -69,7 +69,6 @@ namespace SortOrStay
             }
             if (nextMarker != null) { nextMat = nextMarker.material; nextMat.EnableKeyword("_EMISSION"); }
             if (cable != null) cableRest = cable.rotation;
-            if (Player != null) Player.jumpEnabled = true;     // Space jumps on this floor
             Setup();
         }
 

@@ -49,8 +49,13 @@ namespace SortOrStay
         public float lookSensitivity = 0.09f;
         public float dragSensitivity = 0.16f;  // right-drag in point-and-click mode
         public float keyLookSpeed = 95f;
-        public bool jumpEnabled;               // Space jumps (a floor's puzzle turns it on)
-        public float jumpHeight = 0.55f;
+
+        [Header("Jump")]
+        public bool jumpEnabled = true;        // Space jumps
+        public float jumpHeight = 0.42f;       // a standing jump, roughly what a person manages
+        public float jumpWindup = 0.13f;       // the knees bend before take-off
+        public float airControl = 1.8f;        // m/s² of steering in the air: momentum mostly carries you
+        public float jumpCooldown = 0.35f;
 
         [Header("Camera")]
         public float pivotHeight = 1.55f;
@@ -109,6 +114,11 @@ namespace SortOrStay
         public bool Paused => GameUI.Instance != null && GameUI.Instance.PauseOpen;
         public bool firstPerson => view == View.First;
         public HandReach Hand { get; private set; }
+        /// 0..1: knees bent before take-off and after landing (LegPose drops the hips, the camera dips with them).
+        public float JumpCrouch { get; private set; }
+        /// 0..1: feet drawn up in the air.
+        public float JumpTuck { get; private set; }
+        public bool Airborne => airborne;
 
         CharacterController cc;
         float yaw, pitch = 14f, vy, bodyYaw, faceYaw, faceUntil, curSpeed;
@@ -117,6 +127,14 @@ namespace SortOrStay
         float viewBlend = 1f;                  // 0 = first person, 1 = third person
         float viewBlendSpeed = 3.5f;
         float closeK;                          // 0 = third-person distance, 1 = second-person distance
+
+        // jumping
+        const float Gravity = 9.81f;
+        bool airborne;
+        float takeoffAt = -1f;                 // crouching: leave the ground at this time
+        float lastGrounded, leftGround, nextJump;
+        float landCrouch;                      // knee bend from the last landing, fading out
+        Vector3 airVel;                        // horizontal velocity carried through the air
         float[] eyeHeights;
         Vector3[] rootRest;
         Renderer[][] bodyRenderers;
@@ -168,6 +186,7 @@ namespace SortOrStay
 
             Hand = GetComponent<HandReach>();
             if (Hand == null) Hand = gameObject.AddComponent<HandReach>();
+            if (GetComponent<LegPose>() == null) gameObject.AddComponent<LegPose>();
         }
 
         void OnDestroy()
@@ -504,12 +523,64 @@ namespace SortOrStay
             curSpeed = Mathf.MoveTowards(curSpeed, target, acceleration * Time.deltaTime);
             if (wish.sqrMagnitude > 0.0001f) moveDir = wish.normalized;
 
-            bool jump = jumpEnabled && canMove && !cinematic && !paused && !popup && kb != null && kb.spaceKey.wasPressedThisFrame
-                        && !(ui != null && ui.LastConsumeFrame == Time.frameCount);
-            if (cc.isGrounded) vy = jump ? Mathf.Sqrt(2f * 9.81f * jumpHeight) : -2f;
-            else vy -= 9.81f * Time.deltaTime;
-            if (jump && cc.isGrounded && autoWalk) StopWalking();
-            cc.Move((moveDir * curSpeed + Vector3.up * vy) * Time.deltaTime);
+            // ---- jump: bend the knees, push off, carry momentum through the air, absorb the landing
+            float dt = Time.deltaTime;
+            bool grounded = cc.isGrounded;
+            if (grounded && !airborne) lastGrounded = Time.time;
+            bool jumpPressed = jumpEnabled && canMove && !cinematic && !paused && !popup && kb != null && kb.spaceKey.wasPressedThisFrame
+                               && !(ui != null && ui.LastConsumeFrame == Time.frameCount);
+            if (jumpPressed && !airborne && takeoffAt < 0f && Time.time >= nextJump && Time.time - lastGrounded < 0.12f)
+            {
+                takeoffAt = Time.time + jumpWindup;
+                if (autoWalk) StopWalking();
+            }
+
+            if (grounded && !airborne) vy = -2f;
+            else vy -= Gravity * dt;
+
+            float windup = 0f;
+            if (takeoffAt >= 0f)
+            {
+                windup = Mathf.Clamp01(1f - (takeoffAt - Time.time) / jumpWindup);
+                if (Time.time >= takeoffAt)
+                {
+                    takeoffAt = -1f;
+                    windup = 0f;
+                    vy = Mathf.Sqrt(2f * Gravity * jumpHeight) + Speed * 0.08f;   // a running jump goes a little higher
+                    airVel = moveDir * curSpeed;
+                    airborne = true;
+                    leftGround = Time.time;
+                    ProceduralSfx.Play(ProceduralSfx.Thud, transform.position, 0.12f);
+                }
+            }
+
+            Vector3 horiz;
+            if (airborne)
+            {
+                Vector3 wishVel = wish * (run ? runSpeed : walkSpeed);
+                airVel = Vector3.MoveTowards(airVel, wishVel, airControl * dt);
+                horiz = airVel;
+                curSpeed = airVel.magnitude;
+                if (curSpeed > 0.01f) moveDir = airVel / curSpeed;
+            }
+            else horiz = moveDir * curSpeed * (1f - 0.55f * landCrouch);     // a hard landing slows you for a moment
+
+            float fallSpeed = -vy;
+            cc.Move((horiz + Vector3.up * vy) * dt);
+
+            if (airborne && cc.isGrounded && vy < 0f && Time.time - leftGround > 0.05f)
+            {
+                airborne = false;
+                float impact = Mathf.Clamp01((fallSpeed - 1f) / 4f);
+                landCrouch = Mathf.Max(landCrouch, 0.35f + 0.65f * impact);
+                nextJump = Time.time + jumpCooldown;
+                vy = -2f;
+                ProceduralSfx.Play(ProceduralSfx.Thud, transform.position, 0.25f + 0.5f * impact);
+            }
+            landCrouch = Mathf.MoveTowards(landCrouch, 0f, dt / 0.32f);
+            JumpCrouch = Mathf.Max(Mathf.SmoothStep(0f, 1f, windup), landCrouch);
+            // feet draw up on the way up and reach down again before touching the ground
+            JumpTuck = Mathf.MoveTowards(JumpTuck, airborne ? (vy > -1.2f ? 1f : 0.25f) : 0f, dt * 7f);
 
             Vector3 hv = cc.velocity; hv.y = 0f;
             Speed = Mathf.Min(hv.magnitude, curSpeed + 0.05f);
@@ -523,7 +594,7 @@ namespace SortOrStay
             ApplyBodyRotation();
 
             var a = Anim;
-            if (a != null && a.isActiveAndEnabled) a.SetFloat(SpeedHash, Speed, 0.08f, Time.deltaTime);
+            if (a != null && a.isActiveAndEnabled) a.SetFloat(SpeedHash, airborne ? 0f : Speed, 0.08f, Time.deltaTime);   // legs stop striding in the air
         }
 
         void LateUpdate()
@@ -564,7 +635,8 @@ namespace SortOrStay
         {
             if (cam == null) return;
             closeK = Mathf.MoveTowards(closeK, view == View.Second ? 1f : 0f, dt * 3.5f);
-            Vector3 pivot = transform.position + Vector3.up * pivotHeight;
+            Vector3 dip = Vector3.down * (JumpCrouch * 0.09f);           // the view sinks with the knees
+            Vector3 pivot = transform.position + Vector3.up * pivotHeight + dip;
             Quaternion rot = Quaternion.Euler(pitch, yaw, 0f);
             if (cameraPivot != null) { cameraPivot.position = pivot; cameraPivot.rotation = rot; }
 
@@ -578,7 +650,7 @@ namespace SortOrStay
             if (Mathf.Approximately(viewBlend, firstPerson ? 0f : 1f)) viewBlendSpeed = 3.5f;
             float k = Mathf.SmoothStep(0f, 1f, viewBlend);
 
-            Vector3 eye = transform.position + Vector3.up * EyeHeight + Quaternion.Euler(0f, yaw, 0f) * new Vector3(0f, 0f, 0.12f);
+            Vector3 eye = transform.position + Vector3.up * EyeHeight + dip + Quaternion.Euler(0f, yaw, 0f) * new Vector3(0f, 0f, 0.12f);
             Vector3 third = pivot + dir * (len * camT);
             cam.transform.position = Vector3.Lerp(eye, third, k);
             cam.transform.rotation = rot;
