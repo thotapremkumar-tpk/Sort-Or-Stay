@@ -6,9 +6,10 @@ using UnityEngine.InputSystem;
 namespace SortOrStay
 {
     /// Floor 2, the Storage Room. Seven crates with hidden weights stand on seven scale bays.
-    /// Each pass the player weighs every crate that is still unsorted, then picks the lightest;
-    /// the overhead crane swaps it into the next bay. The scale keeps no memory between passes,
-    /// exactly like selection sort: n(n-1)/2 comparisons, at most n-1 swaps.
+    /// Each pass the player weighs the unsorted crates strictly left to right; every new reading is compared
+    /// with the lightest crate so far, which stays marked. Then the player picks that lightest crate and the
+    /// overhead crane swaps it into the next bay through a temporary spot (tmp = a; a = b; b = tmp).
+    /// The scale keeps no memory between passes, exactly like selection sort: n(n-1)/2 comparisons, at most n-1 swaps.
     public class SelectionPuzzle : SortPuzzleBase
     {
         [Header("Deal")]
@@ -31,8 +32,11 @@ namespace SortOrStay
         static readonly Color LedSorted = new Color(0.25f, 1f, 0.4f);
         static readonly Color LedNext = new Color(1f, 0.62f, 0.1f);
         static readonly Color Advice = new Color(1f, 0.82f, 0.45f);
+        static readonly Color MinColor = new Color(1f, 0.55f, 0.1f);   // the lightest crate found so far this pass
 
         int pass;
+        int scanAt;                          // next bay to weigh this pass (left to right)
+        int minIdx = -1;                     // lightest crate found so far this pass
         bool[] weighed;
         int weighings;
         int startInversions;
@@ -82,7 +86,8 @@ namespace SortOrStay
                 if (items[i].label != null) items[i].label.text = "?";
             }
             weighed = new bool[n];
-            pass = 0;
+            pass = scanAt = 0;
+            minIdx = -1;
             comparisons = swaps = hintsUsed = mistakes = weighings = 0;
             startInversions = CountInversions(vals);
             Solved = false;
@@ -99,19 +104,7 @@ namespace SortOrStay
             return m;
         }
 
-        int MinIndexFrom(int from)
-        {
-            int m = from;
-            for (int i = from + 1; i < N; i++) if (items[i].value < items[m].value) m = i;
-            return m;
-        }
-
-        int Unweighed()
-        {
-            int c = 0;
-            for (int i = pass; i < N; i++) if (!weighed[i]) c++;
-            return c;
-        }
+        bool Scanning => scanAt < N;
 
         // ------------------------------------------------------------ input
 
@@ -132,8 +125,8 @@ namespace SortOrStay
                 // play-testing shortcut (editor only): Ctrl+N performs the next correct step
                 if (kb.leftCtrlKey.isPressed && kb.nKey.wasPressedThisFrame)
                 {
-                    if (Unweighed() > 0) OnButton("scan");
-                    else StartCoroutine(PlaceRoutine(MinIndexFrom(pass)));
+                    if (Scanning) OnButton("scan");
+                    else StartCoroutine(PlaceRoutine(minIdx));
                 }
 #endif
             }
@@ -151,9 +144,9 @@ namespace SortOrStay
             if (!AcceptsInput) return;
             if (id == "hint") { RequestHint(); return; }
             if (id != "scan") return;
-            if (Unweighed() == 0)
+            if (!Scanning)
             {
-                if (GameUI.Instance != null) GameUI.Instance.Info("Every crate left already has a reading.  Pick the lightest.");
+                if (GameUI.Instance != null) GameUI.Instance.Info($"All weighed.  Click the lightest ({items[minIdx].value} kg) to swap it into bay {pass + 1}.");
                 return;
             }
             StartCoroutine(ScanAll());
@@ -172,30 +165,28 @@ namespace SortOrStay
                 return;
             }
 
-            if (!weighed[idx])
+            // weighing goes strictly left to right, like the algorithm's loop
+            if (Scanning)
             {
-                StartCoroutine(WeighRoutine(idx, true, 0.34f));
+                if (idx == scanAt) StartCoroutine(ScanOne(idx, true, 0.34f));
+                else if (idx > scanAt)
+                {
+                    item.Flash(SortItem.ErrorColor, 0.5f);
+                    items[scanAt].Flash(SortItem.HintColor, 1.2f);
+                    if (ui != null) ui.Flash($"Weigh left to right:  bay {scanAt + 1} is next.", Advice, 3f);
+                }
+                else if (ui != null) ui.Info($"Already weighed.  Next:  bay {scanAt + 1}.");
                 return;
             }
 
-            int left = Unweighed();
-            if (left > 0)
-            {
-                item.Flash(SortItem.ErrorColor, 0.5f);
-                Gesture(PlayerController.GestureScratch);
-                if (ui != null)
-                    ui.Flash($"Weigh every crate first:  {left} still {(left == 1 ? "has" : "have")} no reading.\nSelection sort checks them all before it knows which is lightest.", Advice, 4f);
-                return;
-            }
-
-            int m = MinIndexFrom(pass);
-            if (idx != m)
+            if (idx != minIdx)
             {
                 mistakes++;
                 item.Flash(SortItem.ErrorColor, 0.8f);
+                items[minIdx].Flash(SortItem.HintColor, 1.2f);
                 ProceduralSfx.Play(ProceduralSfx.Error, item.transform.position, 0.7f);
                 Gesture(PlayerController.GestureScratch);
-                if (ui != null) ui.Flash($"{item.value} kg is not the lightest crate left.  Compare the readings again.");
+                if (ui != null) ui.Flash($"{item.value} kg is not the lightest.  The lightest is {items[minIdx].value} kg on bay {minIdx + 1}.");
                 Refresh();
                 return;
             }
@@ -208,16 +199,38 @@ namespace SortOrStay
         IEnumerator ScanAll()
         {
             busy = true;
-            for (int i = pass; i < N; i++)
-                if (!weighed[i]) yield return WeighRoutine(i, false, 0.2f);
+            while (Scanning) yield return ScanOne(scanAt, false, 0.2f);
             busy = false;
             Refresh();
-            if (GameUI.Instance != null) GameUI.Instance.Info($"All {N - pass} crates weighed.  Click the lightest to send it to bay {pass + 1}.");
         }
 
-        IEnumerator WeighRoutine(int i, bool ownBusy, float dur)
+        /// Weigh one crate, then compare it with the lightest found so far this pass.
+        IEnumerator ScanOne(int i, bool ownBusy, float dur)
         {
             if (ownBusy) busy = true;
+            yield return WeighRoutine(i, dur);
+            var ui = GameUI.Instance;
+            if (minIdx < 0)
+            {
+                minIdx = i;
+                if (ui != null) ui.Info($"{items[i].value} kg:  lightest so far.");
+            }
+            else
+            {
+                comparisons++;
+                int a = items[i].value, b = items[minIdx].value;
+                if (a < b) minIdx = i;
+                if (ui != null) ui.Info(a < b ? $"{a} < {b}:  new lightest." : $"{a} > {b}:  {b} kg stays the lightest.");
+            }
+            scanAt = i + 1;
+            if (ownBusy) busy = false;
+            Refresh();
+            if (!Scanning && ui != null)
+                ui.Flash($"Lightest:  {items[minIdx].value} kg on bay {minIdx + 1}.  Click it to swap into bay {pass + 1}.", MinColor, 4f);
+        }
+
+        IEnumerator WeighRoutine(int i, float dur)
+        {
             weighings++;
             var item = items[i];
             Vector3 basePos = slots[i].position;
@@ -238,11 +251,6 @@ namespace SortOrStay
             weighed[i] = true;
             if (item.label != null) item.label.text = item.value + " kg";
             item.Flash(SortItem.HintColor, 0.35f);
-            if (ownBusy) busy = false;
-            Refresh();
-
-            if (ownBusy && Unweighed() == 0 && GameUI.Instance != null)
-                GameUI.Instance.Info($"Every crate left is weighed.  Click the lightest to send it to bay {pass + 1}.");
         }
 
         // ------------------------------------------------------------ the swap (overhead crane)
@@ -252,7 +260,6 @@ namespace SortOrStay
             busy = true;
             int p = pass;
             int n = N;
-            comparisons += n - p - 1;          // what the algorithm compared this pass
 
             if (m != p)
             {
@@ -270,6 +277,8 @@ namespace SortOrStay
             items[p].Highlight(SortItem.SortedColor);
             ProceduralSfx.Play(ProceduralSfx.Blip(p), items[p].transform.position, 0.6f);
             pass++;
+            scanAt = pass;
+            minIdx = -1;
 
             // the scale keeps no memory: every crate still unsorted loses its reading
             for (int i = pass; i < n; i++)
@@ -300,65 +309,86 @@ namespace SortOrStay
             else if (GameUI.Instance != null)
             {
                 if (pass == 1)
-                    GameUI.Instance.Flash($"Pass 2.  The scale keeps no memory:  weigh the {n - pass} crates that are left again.\nPress Q (or the green SCAN button) to weigh them all at once.", Advice, 5.5f);
+                    GameUI.Instance.Flash($"Pass 2.  The scale keeps no memory:  weigh the {n - pass} crates that are left again, left to right.\nPress Q (or the green SCAN button) to weigh them all.", Advice, 5.5f);
                 else
                     GameUI.Instance.Info($"Pass {pass + 1}:  {n - pass} crates left to weigh.");
             }
         }
 
+        /// Swap through a temporary spot at the end of the rail, so both crates ride the crane:
+        /// tmp = lightest;  bay m = crate from bay p;  bay p = tmp.
         IEnumerator CraneSwap(int m, int p)
         {
-            SortItem a = items[m];             // the lightest: lifted and carried to bay p
-            SortItem b = items[p];             // the crate in bay p: rolled round behind the row to bay m
-            Vector3 aStart = slots[m].position, aEnd = slots[p].position;
-            Vector3 bStart = slots[p].position, bEnd = slots[m].position;
-            float ha = Height(a);
-            float liftTo = MaxCrateHeight() + 0.35f;
-            Vector3 back = Vector3.forward * 1.15f;       // the row's far side, away from the player
-            float railY = trolley != null ? trolley.position.y : 3.7f;
+            SortItem a = items[m];             // the lightest
+            SortItem b = items[p];             // the crate in the bay it belongs in
+            var ui = GameUI.Instance;
+            float side = slots[m].position.x + slots[p].position.x >= 0f ? 1f : -1f;   // the rail end nearer the two bays
+            float tx = side * (Mathf.Abs(slots[N - 1].position.x) + 0.85f);
+            Vector3 temp = new Vector3(tx, slots[m].position.y - 0.08f, slots[m].position.z);
 
-            // 1. trolley over crate a, cable down to its lid
-            float x0 = trolley != null ? trolley.position.x : aStart.x;
-            float c0 = cableLen, c1 = Mathf.Max(0.3f, railY - (aStart.y + ha) - 0.06f);
-            ProceduralSfx.Play(ProceduralSfx.Slide, aStart + Vector3.up * 3f, 0.4f);
-            yield return Phase(0.65f, k =>
+            if (ui != null) ui.Info($"tmp = {a.value} kg");
+            yield return CraneMove(a, slots[m].position, temp);
+            if (ui != null) ui.Info($"bay {m + 1} = {b.value} kg");
+            yield return CraneMove(b, slots[p].position, slots[m].position);
+            if (ui != null) ui.Info($"bay {p + 1} = tmp ({a.value} kg)");
+            yield return CraneMove(a, temp, slots[p].position);
+
+            yield return Phase(0.3f, k => SetCable(Mathf.Lerp(currentCable, cableLen, k)));
+        }
+
+        /// The crane picks one crate up, carries it along the rail (swaying a little) and sets it down.
+        IEnumerator CraneMove(SortItem crate, Vector3 from, Vector3 to)
+        {
+            float h = Height(crate);
+            float railY = trolley != null ? trolley.position.y : 3.7f;
+            float carryY = slots[0].position.y + MaxCrateHeight() + 0.35f;      // clears every crate in the row
+            System.Func<float, float> cableFor = bottom => Mathf.Max(0.3f, railY - (bottom + h) - 0.06f);
+            Quaternion rest = crate.transform.rotation;
+
+            // trolley over the crate, hook down to its lid
+            float x0 = trolley != null ? trolley.position.x : from.x;
+            float c0 = currentCable, c1 = cableFor(from.y);
+            ProceduralSfx.Play(ProceduralSfx.Slide, from + Vector3.up * 3f, 0.4f);
+            yield return Phase(0.5f, k =>
             {
-                SetTrolleyX(Mathf.Lerp(x0, aStart.x, k));
+                SetTrolleyX(Mathf.Lerp(x0, from.x, k));
                 SetCable(Mathf.Lerp(c0, c1, Mathf.Clamp01(k * 1.6f - 0.6f)));
             });
 
-            // 2. lift a; b rolls out behind the row
-            ProceduralSfx.Play(ProceduralSfx.Swap, aStart + Vector3.up, 0.6f);
-            yield return Phase(0.55f, k =>
+            // lift
+            ProceduralSfx.Play(ProceduralSfx.Swap, from + Vector3.up, 0.55f);
+            yield return Phase(0.45f, k =>
             {
-                a.transform.position = aStart + Vector3.up * (liftTo * k);
-                SetCable(c1 - liftTo * k);
-                b.transform.position = bStart + back * k;
+                float y = Mathf.Lerp(from.y, carryY, k);
+                crate.transform.position = new Vector3(from.x, y, from.z);
+                SetCable(cableFor(y));
             });
 
-            // 3. carry a over to bay p; b travels along the back to bay m
-            yield return Phase(0.95f, k =>
+            // carry: the load lags behind the trolley, then swings back
+            float dx = to.x - from.x;
+            float tilt = Mathf.Clamp(dx * 2.5f, -8f, 8f);
+            yield return Phase(0.45f + 0.16f * Mathf.Abs(dx), k =>
             {
-                SetTrolleyX(Mathf.Lerp(aStart.x, aEnd.x, k));
-                a.transform.position = new Vector3(Mathf.Lerp(aStart.x, aEnd.x, k), aStart.y + liftTo, Mathf.Lerp(aStart.z, aEnd.z, k));
-                b.transform.position = Vector3.Lerp(bStart, bEnd, k) + back;
+                float x = Mathf.Lerp(from.x, to.x, k);
+                SetTrolleyX(x);
+                crate.transform.position = new Vector3(x, carryY, Mathf.Lerp(from.z, to.z, k));
+                crate.transform.rotation = Quaternion.Euler(0f, 0f, tilt * Mathf.Sin(k * Mathf.PI)) * rest;
             });
 
-            // 4. lower a into bay p; b rolls into bay m
-            yield return Phase(0.55f, k =>
+            // set it down, settling the last of the swing
+            yield return Phase(0.45f, k =>
             {
-                a.transform.position = aEnd + Vector3.up * (liftTo * (1f - k));
-                SetCable(c1 - liftTo * (1f - k));
-                b.transform.position = bEnd + back * (1f - k);
+                float y = Mathf.Lerp(carryY, to.y, k);
+                crate.transform.position = new Vector3(to.x, y, to.z);
+                crate.transform.rotation = Quaternion.Euler(0f, 0f, -tilt * 0.35f * Mathf.Sin(k * Mathf.PI)) * rest;
+                SetCable(cableFor(y));
             });
-            a.transform.position = aEnd;
-            b.transform.position = bEnd;
-            ProceduralSfx.Play(ProceduralSfx.Thud, aEnd, 0.9f);
-            ProceduralSfx.Play(ProceduralSfx.Thud, bEnd, 0.6f);
+            crate.transform.SetPositionAndRotation(to, rest);
+            ProceduralSfx.Play(ProceduralSfx.Thud, to, 0.85f);
 
-            // 5. reel the cable back in
-            float c2 = cableLen;
-            yield return Phase(0.35f, k => SetCable(Mathf.Lerp(c1, c2, k)));
+            // hook back up to travel height
+            float c2 = cableFor(carryY);
+            yield return Phase(0.25f, k => SetCable(Mathf.Lerp(cableFor(to.y), c2, k)));
         }
 
         IEnumerator Phase(float dur, System.Action<float> step)
@@ -410,22 +440,18 @@ namespace SortOrStay
         public override string Hint()
         {
             if (pass >= N) return "All crates are sorted.";
-            int left = Unweighed();
-            if (left > 0)
-                return $"Weigh the {left} crate{(left == 1 ? "" : "s")} without a reading first.\nClick them one by one, or press Q / the green SCAN button.";
-            int m = MinIndexFrom(pass);
-            return $"The lightest crate left is {items[m].value} kg on bay {m + 1}.\nClick it and the crane swaps it into bay {pass + 1}.";
+            if (Scanning)
+                return minIdx < 0
+                    ? $"Weigh bay {scanAt + 1} first:  it starts as the lightest so far."
+                    : $"Weigh bay {scanAt + 1} next and compare it with the lightest so far, {items[minIdx].value} kg on bay {minIdx + 1}.";
+            return $"The lightest crate left is {items[minIdx].value} kg on bay {minIdx + 1}.\nClick it and the crane swaps it into bay {pass + 1}.";
         }
 
         public override void RequestHint()
         {
             if (pass >= N) return;
             hintsUsed++;
-            if (Unweighed() > 0)
-            {
-                for (int i = pass; i < N; i++) if (!weighed[i]) items[i].Flash(SortItem.HintColor, 2.2f);
-            }
-            else items[MinIndexFrom(pass)].Flash(SortItem.HintColor, 2.4f);
+            items[Scanning ? scanAt : minIdx].Flash(SortItem.HintColor, 2.4f);
             if (GameUI.Instance != null) GameUI.Instance.Flash(Hint(), SortItem.HintColor, 4.5f);
             Refresh();
         }
@@ -440,8 +466,13 @@ namespace SortOrStay
             if (idx < 0) return "";
             string key = $"   [{idx + 1}]";
             if (idx < pass) return $"Bay {idx + 1}  ·  sorted";
-            if (!weighed[idx]) return "Weigh this crate" + key;
-            return $"Send the {item.value} kg crate to bay {pass + 1}" + key;
+            if (Scanning)
+            {
+                if (idx == scanAt) return "Weigh this crate" + key;
+                return (idx > scanAt ? $"Bay {idx + 1}  ·  weigh left to right" : $"{item.value} kg  ·  weighed") + key;
+            }
+            if (idx == minIdx) return $"Swap the {item.value} kg crate into bay {pass + 1}" + key;
+            return $"{item.value} kg  ·  not the lightest" + key;
         }
 
         // ------------------------------------------------------------ win
@@ -506,7 +537,7 @@ namespace SortOrStay
                 }
                 if (padReadouts != null && i < padReadouts.Length && padReadouts[i] != null)
                     padReadouts[i].text = sorted || weighed[i] ? $"{items[i].value:00.0}" : "--.-";
-                if (!sorted && i < items.Count) items[i].Highlight(SortItem.Idle);
+                if (!sorted && i < items.Count) items[i].Highlight(i == minIdx ? MinColor : SortItem.Idle);
             }
 
             if (nextMarker != null)
@@ -532,7 +563,7 @@ namespace SortOrStay
                     ? "<b>STOCK SCALE</b>  -  SELECTION SORT\n\nALL 7 BAYS SORTED\nLIGHT TO HEAVY\n" + status
                     : "<b>STOCK SCALE</b>  -  SELECTION SORT\n\n" +
                       $"PASS  {Mathf.Min(pass + 1, n - 1)} / {n - 1}        NEXT BAY  {pass + 1}\n" +
-                      $"WEIGHED THIS PASS  {weighedNow} / {n - pass}\n" +
+                      $"WEIGHED THIS PASS  {weighedNow} / {n - pass}" + (minIdx >= 0 ? $"      LIGHTEST  {items[minIdx].value} KG\n" : "\n") +
                       $"SWAPS  {swaps}        WEIGHINGS  {weighings}\n" + status;
             }
             if (terminal != null)
@@ -540,7 +571,7 @@ namespace SortOrStay
                 terminal.SetText(
                     "<b>SCALE CONTROL</b>   FLOOR 2\n" +
                     "> Crates go LIGHT to HEAVY.\n" +
-                    "> Each pass: weigh all that\n   are left, move the lightest.\n\n" +
+                    "> Each pass: weigh left to right,\n   swap the lightest forward.\n\n" +
                     $"PASS {Mathf.Min(pass + 1, n - 1)}/{n - 1}   NEXT BAY {Mathf.Min(pass + 1, n)}\n" +
                     $"WEIGHED {weighedNow}/{n - pass}   SWAPS {swaps}\n\n" +
                     "<size=80%>[ SCAN = Q ]   [ HINT = H ]</size>");
