@@ -28,6 +28,8 @@ namespace SortOrStay
         public float handReach = 0.55f;
         [Tooltip("Walk further than this from the rack holding a key and it goes along in the hand.")]
         public float carryDistance = 0.9f;
+        [Tooltip("First person: the eye stays at least this far from the rack, so every key is on screen.")]
+        public float firstPersonStandOff = 1.3f;
 
         SortItem selected;
         int startInversions;
@@ -52,6 +54,12 @@ namespace SortOrStay
                     ledMats[i] = slotLeds[i].material;
                     ledMats[i].EnableKeyword("_EMISSION");
                 }
+            }
+            // first person: stand the eye off the rack far enough that all six keys fit on screen
+            if (Player != null && slots.Length > 1)
+            {
+                Vector3 a = slots[0].position, b = slots[slots.Length - 1].position;
+                Player.SetViewStandOff((a + b) * 0.5f, slots[0].forward, b - a, Vector3.Distance(a, b) * 0.5f, firstPersonStandOff);
             }
             Setup();
         }

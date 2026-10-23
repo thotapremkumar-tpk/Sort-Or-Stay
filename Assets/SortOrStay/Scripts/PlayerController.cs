@@ -52,10 +52,12 @@ namespace SortOrStay
 
         [Header("Jump")]
         public bool jumpEnabled = true;        // Space jumps
-        public float jumpHeight = 0.42f;       // a standing jump, roughly what a person manages
-        public float jumpWindup = 0.13f;       // the knees bend before take-off
-        public float airControl = 1.8f;        // m/s² of steering in the air: momentum mostly carries you
-        public float jumpCooldown = 0.35f;
+        public float jumpHeight = 0.5f;        // standing hop
+        public float runJumpHeight = 0.7f;     // running leap
+        public float runJumpBoost = 1.3f;      // extra forward m/s when leaping from a run
+        public float jumpWindup = 0.1f;        // the knees bend before a standing take-off (a running leap is near instant)
+        public float airControl = 2.5f;        // m/s² of steering in the air: momentum mostly carries you
+        public float jumpCooldown = 0.3f;
 
         [Header("Camera")]
         public float pivotHeight = 1.55f;
@@ -68,6 +70,7 @@ namespace SortOrStay
         public float minSecondDistance = 0.75f, maxSecondDistance = 1.4f;
         public Vector2 secondShoulder = new Vector2(0.35f, 0.12f);
         public View view = View.Third;
+        public float firstPersonFov = 70f;     // a little wider than the follow cameras, so close-up things fit
 
         [Header("State")]
         public bool canMove = true;
@@ -119,6 +122,10 @@ namespace SortOrStay
         /// 0..1: feet drawn up in the air.
         public float JumpTuck { get; private set; }
         public bool Airborne => airborne;
+        /// 0..1: legs and arms split front/back, for a leap taken at a run.
+        public float JumpStride { get; private set; }
+        /// 0..1: arms thrown up and out while in the air.
+        public float JumpArms { get; private set; }
 
         CharacterController cc;
         float yaw, pitch = 14f, vy, bodyYaw, faceYaw, faceUntil, curSpeed;
@@ -127,6 +134,12 @@ namespace SortOrStay
         float viewBlend = 1f;                  // 0 = first person, 1 = third person
         float viewBlendSpeed = 3.5f;
         float closeK;                          // 0 = third-person distance, 1 = second-person distance
+        float baseFov = -1f;
+
+        // first person: the eye keeps a minimum distance from a wall display (Floor 1's key rack) so all of it stays in view
+        bool standOffOn;
+        Vector3 standOffPoint, standOffNormal, standOffAlong;
+        float standOffHalf, standOffMin;
 
         // jumping
         const float Gravity = 9.81f;
@@ -134,6 +147,7 @@ namespace SortOrStay
         float takeoffAt = -1f;                 // crouching: leave the ground at this time
         float lastGrounded, leftGround, nextJump;
         float landCrouch;                      // knee bend from the last landing, fading out
+        bool runningLeap;
         Vector3 airVel;                        // horizontal velocity carried through the air
         float[] eyeHeights;
         Vector3[] rootRest;
@@ -329,6 +343,30 @@ namespace SortOrStay
             Vector3 dir = ThirdPersonDir(rot, out len);
             camT = len > 0.001f ? CastDistance(pivot, dir, len) / len : 1f;
             if (!cinematic) PlaceCamera(Time.deltaTime, true);
+        }
+
+        /// First person only: never let the eye get closer than 'minDistance' to a flat display (a line of
+        /// 'halfLength' each side of 'center' along 'along', facing 'normal'), so the whole display stays on screen.
+        public void SetViewStandOff(Vector3 center, Vector3 normal, Vector3 along, float halfLength, float minDistance)
+        {
+            normal.y = 0f; along.y = 0f;
+            standOffPoint = center;
+            standOffNormal = normal.normalized;
+            standOffAlong = along.normalized;
+            standOffHalf = halfLength;
+            standOffMin = minDistance;
+            standOffOn = true;
+        }
+
+        Vector3 StandOff(Vector3 eye)
+        {
+            if (!standOffOn) return eye;
+            Vector3 v = eye - standOffPoint;
+            float d = Vector3.Dot(v, standOffNormal);
+            float lateral = Mathf.Abs(Vector3.Dot(v, standOffAlong));
+            if (d >= standOffMin || d < -0.3f) return eye;
+            float edge = Mathf.Clamp01((standOffHalf + 0.9f - lateral) / 0.5f);    // fades out past the ends of the display
+            return eye + standOffNormal * ((standOffMin - d) * edge);
         }
 
         // ------------------------------------------------------------ walking to a target
@@ -531,7 +569,8 @@ namespace SortOrStay
                                && !(ui != null && ui.LastConsumeFrame == Time.frameCount);
             if (jumpPressed && !airborne && takeoffAt < 0f && Time.time >= nextJump && Time.time - lastGrounded < 0.12f)
             {
-                takeoffAt = Time.time + jumpWindup;
+                runningLeap = curSpeed > walkSpeed + 0.4f;
+                takeoffAt = Time.time + (runningLeap ? jumpWindup * 0.4f : jumpWindup);
                 if (autoWalk) StopWalking();
             }
 
@@ -541,13 +580,13 @@ namespace SortOrStay
             float windup = 0f;
             if (takeoffAt >= 0f)
             {
-                windup = Mathf.Clamp01(1f - (takeoffAt - Time.time) / jumpWindup);
+                windup = Mathf.Clamp01(1f - (takeoffAt - Time.time) / jumpWindup) * (runningLeap ? 0.5f : 1f);
                 if (Time.time >= takeoffAt)
                 {
                     takeoffAt = -1f;
                     windup = 0f;
-                    vy = Mathf.Sqrt(2f * Gravity * jumpHeight) + Speed * 0.08f;   // a running jump goes a little higher
-                    airVel = moveDir * curSpeed;
+                    vy = Mathf.Sqrt(2f * Gravity * (runningLeap ? runJumpHeight : jumpHeight));
+                    airVel = moveDir * (curSpeed + (runningLeap ? runJumpBoost : 0f));   // a running leap carries you forward
                     airborne = true;
                     leftGround = Time.time;
                     ProceduralSfx.Play(ProceduralSfx.Thud, transform.position, 0.12f);
@@ -581,6 +620,8 @@ namespace SortOrStay
             JumpCrouch = Mathf.Max(Mathf.SmoothStep(0f, 1f, windup), landCrouch);
             // feet draw up on the way up and reach down again before touching the ground
             JumpTuck = Mathf.MoveTowards(JumpTuck, airborne ? (vy > -1.2f ? 1f : 0.25f) : 0f, dt * 7f);
+            JumpStride = Mathf.MoveTowards(JumpStride, airborne && runningLeap ? (vy > -2f ? 1f : 0.4f) : 0f, dt * 6f);
+            JumpArms = Mathf.MoveTowards(JumpArms, airborne ? 1f : 0f, dt * (airborne ? 9f : 4f));
 
             Vector3 hv = cc.velocity; hv.y = 0f;
             Speed = Mathf.Min(hv.magnitude, curSpeed + 0.05f);
@@ -650,9 +691,11 @@ namespace SortOrStay
             if (Mathf.Approximately(viewBlend, firstPerson ? 0f : 1f)) viewBlendSpeed = 3.5f;
             float k = Mathf.SmoothStep(0f, 1f, viewBlend);
 
-            Vector3 eye = transform.position + Vector3.up * EyeHeight + dip + Quaternion.Euler(0f, yaw, 0f) * new Vector3(0f, 0f, 0.12f);
+            Vector3 eye = StandOff(transform.position + Vector3.up * EyeHeight + dip + Quaternion.Euler(0f, yaw, 0f) * new Vector3(0f, 0f, 0.12f));
             Vector3 third = pivot + dir * (len * camT);
             cam.transform.position = Vector3.Lerp(eye, third, k);
+            if (baseFov < 0f) baseFov = cam.fieldOfView;
+            cam.fieldOfView = Mathf.Lerp(firstPersonFov, baseFov, k);
             cam.transform.rotation = rot;
         }
 
