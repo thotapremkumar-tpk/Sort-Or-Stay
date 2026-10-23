@@ -49,6 +49,8 @@ namespace SortOrStay
         public float lookSensitivity = 0.09f;
         public float dragSensitivity = 0.16f;  // right-drag in point-and-click mode
         public float keyLookSpeed = 95f;
+        public bool jumpEnabled;               // Space jumps (a floor's puzzle turns it on)
+        public float jumpHeight = 0.55f;
 
         [Header("Camera")]
         public float pivotHeight = 1.55f;
@@ -502,7 +504,11 @@ namespace SortOrStay
             curSpeed = Mathf.MoveTowards(curSpeed, target, acceleration * Time.deltaTime);
             if (wish.sqrMagnitude > 0.0001f) moveDir = wish.normalized;
 
-            vy = cc.isGrounded ? -2f : vy - 9.81f * Time.deltaTime;
+            bool jump = jumpEnabled && canMove && !cinematic && !paused && !popup && kb != null && kb.spaceKey.wasPressedThisFrame
+                        && !(ui != null && ui.LastConsumeFrame == Time.frameCount);
+            if (cc.isGrounded) vy = jump ? Mathf.Sqrt(2f * 9.81f * jumpHeight) : -2f;
+            else vy -= 9.81f * Time.deltaTime;
+            if (jump && cc.isGrounded && autoWalk) StopWalking();
             cc.Move((moveDir * curSpeed + Vector3.up * vy) * Time.deltaTime);
 
             Vector3 hv = cc.velocity; hv.y = 0f;

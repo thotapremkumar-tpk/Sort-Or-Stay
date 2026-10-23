@@ -8,7 +8,7 @@ namespace SortOrStay
     /// Floor 2, the Storage Room. Seven crates with hidden weights stand on seven scale bays.
     /// Each pass the player weighs the unsorted crates strictly left to right; every new reading is compared
     /// with the lightest crate so far, which stays marked. Then the player picks that lightest crate and the
-    /// overhead crane swaps it into the next bay through a temporary spot (tmp = a; a = b; b = tmp).
+    /// overhead crane swaps it into the next bay through a temporary spot behind the row (tmp = a; a = b; b = tmp).
     /// The scale keeps no memory between passes, exactly like selection sort: n(n-1)/2 comparisons, at most n-1 swaps.
     public class SelectionPuzzle : SortPuzzleBase
     {
@@ -44,6 +44,7 @@ namespace SortOrStay
         Material nextMat;
         Vector3[] padRest;
         float cableLen = 0.35f;
+        Quaternion cableRest = Quaternion.identity;
 
         int N => items.Count;
 
@@ -67,6 +68,8 @@ namespace SortOrStay
                 for (int i = 0; i < padTops.Length; i++) if (padTops[i] != null) padRest[i] = padTops[i].position;
             }
             if (nextMarker != null) { nextMat = nextMarker.material; nextMat.EnableKeyword("_EMISSION"); }
+            if (cable != null) cableRest = cable.rotation;
+            if (Player != null) Player.jumpEnabled = true;     // Space jumps on this floor
             Setup();
         }
 
@@ -315,16 +318,15 @@ namespace SortOrStay
             }
         }
 
-        /// Swap through a temporary spot at the end of the rail, so both crates ride the crane:
+        /// Swap through a temporary spot on the floor behind the lightest crate's bay, so both crates ride the crane:
         /// tmp = lightest;  bay m = crate from bay p;  bay p = tmp.
         IEnumerator CraneSwap(int m, int p)
         {
             SortItem a = items[m];             // the lightest
             SortItem b = items[p];             // the crate in the bay it belongs in
             var ui = GameUI.Instance;
-            float side = slots[m].position.x + slots[p].position.x >= 0f ? 1f : -1f;   // the rail end nearer the two bays
-            float tx = side * (Mathf.Abs(slots[N - 1].position.x) + 0.85f);
-            Vector3 temp = new Vector3(tx, slots[m].position.y - 0.08f, slots[m].position.z);
+            Vector3 temp = slots[m].position + Vector3.forward * 1.15f;   // the row's far side, away from the player
+            temp.y -= 0.08f;                                               // on the floor, not on a scale plate
 
             if (ui != null) ui.Info($"tmp = {a.value} kg");
             yield return CraneMove(a, slots[m].position, temp);
@@ -336,59 +338,72 @@ namespace SortOrStay
             yield return Phase(0.3f, k => SetCable(Mathf.Lerp(currentCable, cableLen, k)));
         }
 
-        /// The crane picks one crate up, carries it along the rail (swaying a little) and sets it down.
+        /// The crane picks one crate up, carries it (swaying a little) and sets it down. The trolley runs along the
+        /// rail in x; for a spot behind the row the cable angles back to reach it.
         IEnumerator CraneMove(SortItem crate, Vector3 from, Vector3 to)
         {
             float h = Height(crate);
-            float railY = trolley != null ? trolley.position.y : 3.7f;
             float carryY = slots[0].position.y + MaxCrateHeight() + 0.35f;      // clears every crate in the row
-            System.Func<float, float> cableFor = bottom => Mathf.Max(0.3f, railY - (bottom + h) - 0.06f);
+            System.Func<Vector3, Vector3> lid = bottom => bottom + Vector3.up * (h - 0.04f);   // where the hook grips
             Quaternion rest = crate.transform.rotation;
 
-            // trolley over the crate, hook down to its lid
+            // trolley over the crate, then the hook down to its lid
             float x0 = trolley != null ? trolley.position.x : from.x;
-            float c0 = currentCable, c1 = cableFor(from.y);
+            float c0 = currentCable;
+            Vector3 hook0 = Vector3.zero;
             ProceduralSfx.Play(ProceduralSfx.Slide, from + Vector3.up * 3f, 0.4f);
-            yield return Phase(0.5f, k =>
+            yield return Phase(0.55f, k =>
             {
-                SetTrolleyX(Mathf.Lerp(x0, from.x, k));
-                SetCable(Mathf.Lerp(c0, c1, Mathf.Clamp01(k * 1.6f - 0.6f)));
+                float move = Mathf.Clamp01(k / 0.6f), drop = Mathf.Clamp01((k - 0.6f) / 0.4f);
+                SetTrolleyX(Mathf.Lerp(x0, from.x, move));
+                if (drop <= 0f) { SetCable(c0); hook0 = HookPos(); }
+                else SetHook(Vector3.Lerp(hook0, lid(from), drop));
             });
 
             // lift
             ProceduralSfx.Play(ProceduralSfx.Swap, from + Vector3.up, 0.55f);
             yield return Phase(0.45f, k =>
             {
-                float y = Mathf.Lerp(from.y, carryY, k);
-                crate.transform.position = new Vector3(from.x, y, from.z);
-                SetCable(cableFor(y));
+                Vector3 pos = new Vector3(from.x, Mathf.Lerp(from.y, carryY, k), from.z);
+                crate.transform.position = pos;
+                SetHook(lid(pos));
             });
 
-            // carry: the load lags behind the trolley, then swings back
-            float dx = to.x - from.x;
-            float tilt = Mathf.Clamp(dx * 2.5f, -8f, 8f);
-            yield return Phase(0.45f + 0.16f * Mathf.Abs(dx), k =>
+            // carry: the load lags behind the movement, then swings back
+            Vector3 d = to - from;
+            float tiltZ = Mathf.Clamp(d.x * 2.5f, -8f, 8f), tiltX = Mathf.Clamp(-d.z * 6f, -8f, 8f);
+            float flat = new Vector2(d.x, d.z).magnitude;
+            yield return Phase(0.45f + 0.16f * flat, k =>
             {
-                float x = Mathf.Lerp(from.x, to.x, k);
-                SetTrolleyX(x);
-                crate.transform.position = new Vector3(x, carryY, Mathf.Lerp(from.z, to.z, k));
-                crate.transform.rotation = Quaternion.Euler(0f, 0f, tilt * Mathf.Sin(k * Mathf.PI)) * rest;
+                Vector3 pos = new Vector3(Mathf.Lerp(from.x, to.x, k), carryY, Mathf.Lerp(from.z, to.z, k));
+                SetTrolleyX(pos.x);
+                crate.transform.position = pos;
+                float sway = Mathf.Sin(k * Mathf.PI);
+                crate.transform.rotation = Quaternion.Euler(tiltX * sway, 0f, tiltZ * sway) * rest;
+                SetHook(lid(pos));
             });
 
             // set it down, settling the last of the swing
             yield return Phase(0.45f, k =>
             {
-                float y = Mathf.Lerp(carryY, to.y, k);
-                crate.transform.position = new Vector3(to.x, y, to.z);
-                crate.transform.rotation = Quaternion.Euler(0f, 0f, -tilt * 0.35f * Mathf.Sin(k * Mathf.PI)) * rest;
-                SetCable(cableFor(y));
+                Vector3 pos = new Vector3(to.x, Mathf.Lerp(carryY, to.y, k), to.z);
+                crate.transform.position = pos;
+                float sway = -0.35f * Mathf.Sin(k * Mathf.PI);
+                crate.transform.rotation = Quaternion.Euler(tiltX * sway, 0f, tiltZ * sway) * rest;
+                SetHook(lid(pos));
             });
             crate.transform.SetPositionAndRotation(to, rest);
             ProceduralSfx.Play(ProceduralSfx.Thud, to, 0.85f);
 
-            // hook back up to travel height
-            float c2 = cableFor(carryY);
-            yield return Phase(0.25f, k => SetCable(Mathf.Lerp(cableFor(to.y), c2, k)));
+            // hook back up under the trolley, at travel height
+            Vector3 hookDown = HookPos();
+            float travel = Mathf.Max(0.3f, (cable != null ? cable.position.y : carryY + 2f) - lid(new Vector3(0f, carryY, 0f)).y);
+            yield return Phase(0.3f, k =>
+            {
+                Vector3 up = (cable != null ? cable.position : hookDown) + Vector3.down * travel;
+                SetHook(Vector3.Lerp(hookDown, up, k));
+            });
+            SetCable(travel);
         }
 
         IEnumerator Phase(float dur, System.Action<float> step)
@@ -417,10 +432,24 @@ namespace SortOrStay
             currentCable = Mathf.Max(0.05f, len);
             if (cable != null)
             {
+                cable.rotation = cableRest;
                 Vector3 s = cable.localScale; s.y = currentCable; cable.localScale = s;
             }
             if (hook != null && cable != null) hook.position = cable.position + Vector3.down * currentCable;
         }
+
+        /// Put the hook at a point; the cable stretches (and angles) from the trolley down to it.
+        void SetHook(Vector3 p)
+        {
+            if (cable == null) { if (hook != null) hook.position = p; return; }
+            Vector3 d = p - cable.position;
+            currentCable = Mathf.Max(0.05f, d.magnitude);
+            cable.rotation = Quaternion.FromToRotation(Vector3.down, d.sqrMagnitude > 1e-6f ? d.normalized : Vector3.down) * cableRest;
+            Vector3 s = cable.localScale; s.y = currentCable; cable.localScale = s;
+            if (hook != null) hook.position = p;
+        }
+
+        Vector3 HookPos() => hook != null ? hook.position : (cable != null ? cable.position + Vector3.down * currentCable : Vector3.zero);
 
         static float Height(SortItem it)
         {
