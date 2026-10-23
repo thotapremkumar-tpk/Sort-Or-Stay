@@ -182,25 +182,12 @@ namespace SortOrStay
                     Text(new Rect(r.x + 22f, r.y + 13f, sz.x + 4f, 30f), stats, sStats, Ink);
                 }
 
+                // no text label at the pointer (it covered the view while looking around); the bouncing marker
+                // above the hovered thing shows what a click will use
                 bool hot = !string.IsNullOrEmpty(prompt) && !PopupOpen && !PauseOpen;
-                if (promptAtCursor)
+                if (!promptAtCursor)
                 {
-                    // point and click: the label sits next to the mouse
-                    if (hot)
-                    {
-                        Vector2 m = Event.current.mousePosition;
-                        string p = "Click   ·   " + prompt;
-                        Vector2 psz = sPrompt.CalcSize(new GUIContent(p));
-                        float px = Mathf.Min(m.x + 26f, W - psz.x - 50f);
-                        float py = Mathf.Min(m.y + 22f, H - 60f);
-                        Rect pr = new Rect(px, py, psz.x + 36f, 40f);
-                        Box(pr, Pill);
-                        Text(new Rect(pr.x, pr.y + 8f, pr.width, 30f), p, sPrompt, new Color(1f, 0.82f, 0.45f));
-                    }
-                }
-                else
-                {
-                    // crosshair (dark dot in a white ring: readable on bright walls) + prompt
+                    // crosshair (dark dot in a white ring: readable on bright walls)
                     float cx = W * 0.5f, cy = H * 0.5f;
                     Box(new Rect(cx - 5f, cy - 5f, 10f, 10f), new Color(1f, 1f, 1f, 0.85f));
                     Box(new Rect(cx - 3f, cy - 3f, 6f, 6f), hot ? Accent : new Color(0.1f, 0.1f, 0.12f, 0.9f));
@@ -210,11 +197,6 @@ namespace SortOrStay
                         Box(new Rect(cx + 9f, cy - 1.5f, 8f, 3f), Accent);
                         Box(new Rect(cx - 1.5f, cy - 17f, 3f, 8f), Accent);
                         Box(new Rect(cx - 1.5f, cy + 9f, 3f, 8f), Accent);
-                        string p = "Click / E   ·   " + prompt;
-                        Vector2 psz = sPrompt.CalcSize(new GUIContent(p));
-                        Rect pr = new Rect(cx - psz.x * 0.5f - 18f, cy + 28f, psz.x + 36f, 40f);
-                        Box(pr, Pill);
-                        Text(new Rect(pr.x, pr.y + 8f, pr.width, 30f), p, sPrompt, new Color(1f, 0.82f, 0.45f));
                     }
                 }
 

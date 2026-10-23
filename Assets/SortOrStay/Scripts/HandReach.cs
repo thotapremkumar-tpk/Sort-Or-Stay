@@ -45,6 +45,13 @@ namespace SortOrStay
             }
         }
 
+        /// The current avatar's hand bone on that side (things carried in the hand follow it).
+        public Transform HandBone(int side)
+        {
+            int a = pc != null ? pc.AvatarIndex : 0;
+            return a < hand.GetLength(0) ? hand[a, side] : null;
+        }
+
         /// The hand on the same side of the body as this point (right hand for things on the avatar's right).
         public int SideFor(Vector3 point)
         {

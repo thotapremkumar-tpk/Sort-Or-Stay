@@ -8,6 +8,7 @@ namespace SortOrStay
     /// one pair of neighbours at a time, left to right. The player picks up a key of that pair and decides:
     /// click its neighbour to swap them (the left one is bigger) or click the same key again to let them stay.
     /// At the end of each pass the biggest unsorted key has bubbled to the right and is locked in place.
+    [DefaultExecutionOrder(110)]           // LateUpdate after HandReach, so a carried key follows the final hand pose
     public class BubblePuzzle : SortPuzzleBase
     {
         [Header("Deal")]
@@ -25,6 +26,8 @@ namespace SortOrStay
         [Header("Hands")]
         [Tooltip("The avatar walks this close to a key and takes it by hand.")]
         public float handReach = 0.55f;
+        [Tooltip("Walk further than this from the rack holding a key and it goes along in the hand.")]
+        public float carryDistance = 0.9f;
 
         SortItem selected;
         int startInversions;
@@ -32,6 +35,8 @@ namespace SortOrStay
         int passSwaps;
         Material[] ledMats;
         Coroutine lift;                      // the picked-up key sliding off / back onto its hook
+        bool carrying;                       // the held key is in the avatar's hand, away from the rack
+        int carrySide;
 
         int N => items.Count;
         static HandReach Hand => PlayerController.Instance != null ? PlayerController.Instance.Hand : null;
@@ -79,6 +84,7 @@ namespace SortOrStay
             startInversions = CountInversions(vals);
             comparisons = swaps = hintsUsed = mistakes = 0;
             pass = cmp = passSwaps = 0;
+            StopCarry();
             selected = null;
             if (Hand != null) Hand.Release();
             Solved = false;
@@ -101,9 +107,13 @@ namespace SortOrStay
             int d = DigitPressed(kb);
             if (d >= 1 && d <= items.Count && ShortcutsAllowed() && !(kb.leftCtrlKey.isPressed)) UseByKey(items[d - 1]);
 
-            // walked away holding a key: hang it back up
-            var pc = Player;
-            if (pc != null && selected != null && !busy && Vector3.Distance(pc.Chest, selected.transform.position) > 1.6f) PutDown();
+            // walked away holding a key: it goes along in the hand; back at the rack it is held up to its hook again
+            if (Player != null && selected != null && !busy)
+            {
+                float away = FlatToSlot(selected);
+                if (!carrying && away > carryDistance) StartCarry();
+                else if (carrying && away < carryDistance - 0.25f) EndCarry();
+            }
 
 #if UNITY_EDITOR
             // play-testing shortcut (editor only): Ctrl+N makes the next correct bubble sort move
@@ -113,6 +123,55 @@ namespace SortOrStay
                 Decide(items[cmp].value > items[cmp + 1].value);
             }
 #endif
+        }
+
+        void LateUpdate()
+        {
+            if (!carrying || selected == null || Hand == null) return;
+            Transform h = Hand.HandBone(carrySide);
+            if (h != null) selected.transform.position = h.position + Vector3.down * 0.03f - Grip;
+        }
+
+        // ------------------------------------------------------------ carrying the held key around
+
+        float FlatToSlot(SortItem key)
+        {
+            Vector3 d = Player.transform.position - slots[items.IndexOf(key)].position;
+            d.y = 0f;
+            return d.magnitude;
+        }
+
+        void StartCarry()
+        {
+            carrying = true;
+            if (lift != null) StopCoroutine(lift);
+            if (Hand != null) Hand.Release(carrySide);          // the arm swings with the walk, the key hangs from the hand
+            IgnorePlayer(selected, true);
+        }
+
+        /// Back at the rack: the hand holds the key up in front of its hook again.
+        void EndCarry()
+        {
+            if (!carrying) return;
+            StopCarry();
+            int i = items.IndexOf(selected);
+            if (Hand != null) Hand.Hold(carrySide, selected.transform, Grip);
+            Lift(selected, slots[i].position + slots[i].forward * 0.07f + Vector3.up * 0.03f);
+        }
+
+        void StopCarry()
+        {
+            if (!carrying) return;
+            carrying = false;
+            if (selected != null) IgnorePlayer(selected, false);
+        }
+
+        /// A key in the hand must not shove the player's own capsule around.
+        void IgnorePlayer(SortItem key, bool ignore)
+        {
+            var cc = Player != null ? Player.GetComponent<CharacterController>() : null;
+            if (cc == null) return;
+            foreach (var c in key.GetComponentsInChildren<Collider>()) Physics.IgnoreCollision(cc, c, ignore);
         }
 
         // ------------------------------------------------------------ the mechanic: one compare at a time
@@ -128,6 +187,17 @@ namespace SortOrStay
         public override void OnItemClicked(SortItem clicked)
         {
             if (!AcceptsInput) return;
+            if (carrying && Player != null)
+            {
+                // the held key is in the avatar's hand: walk back to its hook first, then act
+                var target = clicked;
+                Player.WalkTo(slots[items.IndexOf(selected)].position, carryDistance - 0.4f, () =>
+                {
+                    EndCarry();
+                    OnItemClicked(target);
+                });
+                return;
+            }
             int idx = items.IndexOf(clicked);
 
             if (selected == null)
@@ -143,6 +213,7 @@ namespace SortOrStay
         void Select(SortItem key)
         {
             selected = key;
+            carrySide = HandFor(items.IndexOf(key), cmp);
             key.Highlight(SortItem.SelectedColor);
             key.Kick(25f);
             ProceduralSfx.Play(ProceduralSfx.Select, key.transform.position, 0.6f);
@@ -154,6 +225,7 @@ namespace SortOrStay
         void PutDown()
         {
             if (selected == null) return;
+            StopCarry();
             int i = items.IndexOf(selected);
             Lift(selected, slots[i].position);
             selected = null;
@@ -334,6 +406,7 @@ namespace SortOrStay
         IEnumerator SolvedSequence()
         {
             busy = true;
+            StopCarry();
             if (selected != null) { selected.Highlight(SortItem.Idle); selected = null; }
             if (Hand != null) Hand.Release();
             Gesture(PlayerController.GestureCheer);
