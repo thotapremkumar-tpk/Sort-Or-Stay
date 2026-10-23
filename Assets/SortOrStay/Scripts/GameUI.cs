@@ -326,7 +326,7 @@ namespace SortOrStay
             y += bh + gap;
             if (pc != null && Button(new Rect(x, y, bw, bh), "Character:  " + pc.AvatarName + "   (C)")) pc.CycleAvatar();
             y += bh + gap;
-            if (pc != null && Button(new Rect(x, y, bw, bh), "Camera:  " + (pc.firstPerson ? "first person" : "third person") + "   (V)")) pc.ToggleView();
+            if (pc != null && Button(new Rect(x, y, bw, bh), "Camera:  " + pc.ViewName.ToLowerInvariant() + "   (V)")) pc.ToggleView();
             y += bh + gap;
             if (pc != null && Button(new Rect(x, y, bw, bh), "Controls:  " + (PlayerController.PointerMode ? "point and click" : "mouse look") + "   (Tab)"))
             {

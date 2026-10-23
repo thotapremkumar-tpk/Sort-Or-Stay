@@ -15,7 +15,7 @@ namespace SortOrStay
     ///                               the scroll wheel zooms. WASD still walks.
     ///   Mouse look                - the old crosshair style: the mouse turns the camera, click uses what the
     ///                               crosshair points at (the avatar still walks over to it by itself).
-    /// V switches first/third person, C switches character, Esc pauses.
+    /// V cycles first / second / third person, C switches character, Esc pauses.
     /// The root object never rotates: the avatar turns to face where it walks, the camera pivot turns with the mouse.
     [RequireComponent(typeof(CharacterController))]
     public class PlayerController : MonoBehaviour
@@ -26,6 +26,9 @@ namespace SortOrStay
         public const string GestureScratch = "Scratch";
         public const string GestureTryDoor = "TryDoor";
         public const string GestureLookAround = "LookAround";
+
+        /// First = through the eyes, Second = close over the shoulder, Third = full body from further back.
+        public enum View { First, Second, Third }
 
         [Header("Rig")]
         public Transform cameraPivot;          // child of this object; yaw + pitch
@@ -54,12 +57,10 @@ namespace SortOrStay
         public Vector2 shoulder = new Vector2(0.6f, 0.12f);
         public float collisionRadius = 0.16f;
         public float minPitch = -45f, maxPitch = 60f;
-        public bool firstPerson;
-
-        [Header("Framing")]
-        public float frameLift = 0.3f;         // third person: the camera rises this much to look over the head
-        public float maxFramePull = 3f;        // furthest the camera backs off to fit a framed box
-        public float frameTurnSpeed = 4f;
+        public float secondDistance = 1.0f;    // second person: close behind the head and shoulders
+        public float minSecondDistance = 0.75f, maxSecondDistance = 1.4f;
+        public Vector2 secondShoulder = new Vector2(0.35f, 0.12f);
+        public View view = View.Third;
 
         [Header("State")]
         public bool canMove = true;
@@ -104,8 +105,8 @@ namespace SortOrStay
         public float Speed { get; private set; }
         public bool IsAutoWalking => autoWalk;
         public bool Paused => GameUI.Instance != null && GameUI.Instance.PauseOpen;
+        public bool firstPerson => view == View.First;
         public HandReach Hand { get; private set; }
-        public bool Framing => frameOn;
 
         CharacterController cc;
         float yaw, pitch = 14f, vy, bodyYaw, faceYaw, faceUntil, curSpeed;
@@ -113,18 +114,12 @@ namespace SortOrStay
         float camT = 1f;                       // 0..1 of the full third-person distance (collision)
         float viewBlend = 1f;                  // 0 = first person, 1 = third person
         float viewBlendSpeed = 3.5f;
+        float closeK;                          // 0 = third-person distance, 1 = second-person distance
         float[] eyeHeights;
         Vector3[] rootRest;
         Renderer[][] bodyRenderers;
         bool forceHidden;
         int hideState = -1;                    // 0 visible, 1 shadows only, 2 hidden
-
-        // keeping a puzzle's objects in view
-        bool frameOn;
-        Bounds frameBox;
-        float frameK;                          // 0..1 eased
-        float framePull;                       // metres the camera currently backs off to fit the box
-        float manualLookUntil;                 // the player turned the camera or walked: framing waits
 
         // walking to a clicked point / thing
         bool autoWalk;
@@ -252,17 +247,21 @@ namespace SortOrStay
         /// The camera starts at the eyes and glides back over the shoulder.
         public void PullBackFromEye(float seconds)
         {
-            firstPerson = false;
+            view = View.Third;
+            closeK = 0f;
             viewBlend = 0f;
             viewBlendSpeed = 1f / Mathf.Max(0.05f, seconds);
         }
 
+        /// V: first -> second -> third person -> first ...
         public void ToggleView()
         {
-            firstPerson = !firstPerson;
+            view = view == View.First ? View.Second : view == View.Second ? View.Third : View.First;
             viewBlendSpeed = 3.5f;
-            if (GameUI.Instance != null) GameUI.Instance.Info(firstPerson ? "First-person view" : "Third-person view");
+            if (GameUI.Instance != null) GameUI.Instance.Info(ViewName + " view");
         }
+
+        public string ViewName => view == View.First ? "First-person" : view == View.Second ? "Second-person" : "Third-person";
 
         public void CycleAvatar()
         {
@@ -302,6 +301,7 @@ namespace SortOrStay
         {
             if (cam == null) return;
             viewBlend = firstPerson ? 0f : 1f;
+            closeK = view == View.Second ? 1f : 0f;
             Vector3 pivot = transform.position + Vector3.up * pivotHeight;
             Quaternion rot = Quaternion.Euler(pitch, yaw, 0f);
             float len;
@@ -309,16 +309,6 @@ namespace SortOrStay
             camT = len > 0.001f ? CastDistance(pivot, dir, len) / len : 1f;
             if (!cinematic) PlaceCamera(Time.deltaTime, true);
         }
-
-        /// Keep every point of this box in view: the camera turns toward it and backs off (in first or third
-        /// person) until it all fits. A puzzle calls this every frame while the player works at it.
-        public void FrameBounds(Bounds box)
-        {
-            frameBox = box;
-            frameOn = true;
-        }
-
-        public void ClearFrame() { frameOn = false; }
 
         // ------------------------------------------------------------ walking to a target
 
@@ -476,7 +466,10 @@ namespace SortOrStay
 
                     float scroll = mouse.scroll.ReadValue().y;
                     if (Mathf.Abs(scroll) > 0.01f && !popup)
-                        camDistance = Mathf.Clamp(camDistance - scroll * 0.0025f, minDistance, maxDistance);
+                    {
+                        if (view == View.Second) secondDistance = Mathf.Clamp(secondDistance - scroll * 0.0025f, minSecondDistance, maxSecondDistance);
+                        else camDistance = Mathf.Clamp(camDistance - scroll * 0.0025f, minDistance, maxDistance);
+                    }
                 }
                 if (kb != null)
                 {
@@ -486,20 +479,6 @@ namespace SortOrStay
                 }
                 yaw += d.x;
                 pitch = Mathf.Clamp(pitch - d.y, minPitch, maxPitch);
-                if (d.sqrMagnitude > 0.0001f) manualLookUntil = Time.time + 2f;
-            }
-
-            // ---- framing: ease the view toward the framed box unless the player is steering the camera
-            if (frameOn && !cinematic && !paused && cam != null && Time.time > manualLookUntil)
-            {
-                Vector3 to = frameBox.center - cam.transform.position;
-                float flat = new Vector2(to.x, to.z).magnitude;
-                if (flat > 0.05f)
-                {
-                    float f = 1f - Mathf.Exp(-frameTurnSpeed * Time.deltaTime);
-                    yaw = Mathf.LerpAngle(yaw, Mathf.Atan2(to.x, to.z) * Mathf.Rad2Deg, f);
-                    pitch = Mathf.Clamp(Mathf.LerpAngle(pitch, -Mathf.Atan2(to.y, flat) * Mathf.Rad2Deg, f), minPitch, maxPitch);
-                }
             }
 
             // ---- move (camera-relative), or follow the path to something that was clicked
@@ -515,7 +494,7 @@ namespace SortOrStay
                 if (wish.sqrMagnitude > 1f) wish.Normalize();
                 run = kb.leftShiftKey.isPressed || kb.rightShiftKey.isPressed;
             }
-            if (wish.sqrMagnitude > 0.0001f) { if (autoWalk) StopWalking(); manualLookUntil = Time.time + 1f; }
+            if (wish.sqrMagnitude > 0.0001f) { if (autoWalk) StopWalking(); }
             else if (autoWalk && canMove && !cinematic && !paused) { wish = AutoWalkStep(); driving = true; }
             else if (autoWalk && (cinematic || !canMove)) StopWalking();
 
@@ -561,7 +540,9 @@ namespace SortOrStay
 
         Vector3 ThirdPersonDir(Quaternion rot, out float len)
         {
-            Vector3 offset = rot * new Vector3(shoulder.x, shoulder.y, -camDistance);
+            float k = Mathf.SmoothStep(0f, 1f, closeK);
+            Vector2 sh = Vector2.Lerp(shoulder, secondShoulder, k);
+            Vector3 offset = rot * new Vector3(sh.x, sh.y, -Mathf.Lerp(camDistance, secondDistance, k));
             len = offset.magnitude;
             return len > 0.0001f ? offset / len : Vector3.back;
         }
@@ -576,9 +557,8 @@ namespace SortOrStay
         void PlaceCamera(float dt, bool snap)
         {
             if (cam == null) return;
-            frameK = Mathf.MoveTowards(frameK, frameOn ? 1f : 0f, dt * 1.5f);
-            float fk = Mathf.SmoothStep(0f, 1f, frameK);
-            Vector3 pivot = transform.position + Vector3.up * (pivotHeight + frameLift * fk * viewBlend);
+            closeK = Mathf.MoveTowards(closeK, view == View.Second ? 1f : 0f, dt * 3.5f);
+            Vector3 pivot = transform.position + Vector3.up * pivotHeight;
             Quaternion rot = Quaternion.Euler(pitch, yaw, 0f);
             if (cameraPivot != null) { cameraPivot.position = pivot; cameraPivot.rotation = rot; }
 
@@ -593,40 +573,9 @@ namespace SortOrStay
             float k = Mathf.SmoothStep(0f, 1f, viewBlend);
 
             Vector3 eye = transform.position + Vector3.up * EyeHeight + Quaternion.Euler(0f, yaw, 0f) * new Vector3(0f, 0f, 0.12f);
-            // first person while framing: the eye rises a little over the right shoulder so the whole body,
-            // head and both hands included, stays visible below it once the camera backs off
-            eye += Quaternion.Euler(0f, yaw, 0f) * new Vector3(0.3f, 0.32f, 0f) * fk;
             Vector3 third = pivot + dir * (len * camT);
-            Vector3 pos = Vector3.Lerp(eye, third, k);
-
-            // back straight off (stopping at walls) until the whole framed box fits on screen
-            float need = fk > 0f ? Mathf.Min(FitPullBack(pos, rot), maxFramePull) * fk : 0f;
-            framePull = snap ? need : Mathf.Lerp(framePull, need, 1f - Mathf.Exp(-5f * dt));
-            if (framePull > 0.005f)
-            {
-                Vector3 back = rot * Vector3.back;
-                pos += back * Mathf.Min(framePull, CastDistance(pos, back, framePull));
-            }
-
-            cam.transform.position = pos;
+            cam.transform.position = Vector3.Lerp(eye, third, k);
             cam.transform.rotation = rot;
-        }
-
-        /// How far the camera must move back along its view axis so all eight corners of the framed box are on screen.
-        float FitPullBack(Vector3 pos, Quaternion rot)
-        {
-            float tanV = Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad) * 0.88f;   // a little margin
-            float tanH = tanV * cam.aspect;
-            Quaternion inv = Quaternion.Inverse(rot);
-            Vector3 c = frameBox.center, e = frameBox.extents;
-            float need = 0f;
-            for (int i = 0; i < 8; i++)
-            {
-                Vector3 corner = c + new Vector3((i & 1) == 0 ? -e.x : e.x, (i & 2) == 0 ? -e.y : e.y, (i & 4) == 0 ? -e.z : e.z);
-                Vector3 l = inv * (corner - pos);
-                need = Mathf.Max(need, Mathf.Abs(l.x) / tanH - l.z, Mathf.Abs(l.y) / tanV - l.z);
-            }
-            return need;
         }
 
         void UpdateVisibility()
@@ -637,8 +586,7 @@ namespace SortOrStay
             else if (cam != null)
             {
                 Vector3 head = transform.position + Vector3.up * (EyeHeight - 0.05f);
-                bool close = Vector3.Distance(cam.transform.position, head) < 0.42f || (firstPerson && viewBlend < 0.35f);
-                if (close) state = firstPerson && framePull > 0.6f ? 0 : 1;   // backed off to frame a puzzle: show the whole avatar
+                if (Vector3.Distance(cam.transform.position, head) < 0.42f || (firstPerson && viewBlend < 0.35f)) state = 1;
             }
             if (state == hideState) return;
             hideState = state;

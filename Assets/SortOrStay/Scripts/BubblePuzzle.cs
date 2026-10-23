@@ -22,19 +22,15 @@ namespace SortOrStay
         public Color ledOn = new Color(0.25f, 1f, 0.4f);
         public Color ledOff = new Color(0.05f, 0.05f, 0.05f);
 
-        [Header("Hand and camera")]
+        [Header("Hands")]
         [Tooltip("The avatar walks this close to a key and takes it by hand.")]
         public float handReach = 0.55f;
-        [Tooltip("Within this distance of the rack the camera keeps all keys in view.")]
-        public float frameRange = 2.8f;
 
         SortItem selected;
         int startInversions;
         int pass, cmp;                       // bubble sort cursor: pass number and left index of the pair being compared
         int passSwaps;
         Material[] ledMats;
-        Bounds keyBox;
-        bool framing;
         Coroutine lift;                      // the picked-up key sliding off / back onto its hook
 
         int N => items.Count;
@@ -52,15 +48,6 @@ namespace SortOrStay
                     ledMats[i].EnableKeyword("_EMISSION");
                 }
             }
-
-            // every key, its tag and the SMALLEST / LARGEST labels: what the camera keeps in view at the rack
-            keyBox = new Bounds(slots[0].position, Vector3.zero);
-            foreach (var s in slots)
-            {
-                keyBox.Encapsulate(s.position + Vector3.up * 0.35f);
-                keyBox.Encapsulate(s.position + Vector3.down * 0.42f);
-            }
-            keyBox.Expand(new Vector3(0.3f, 0.06f, 0.2f));
             Setup();
         }
 
@@ -114,19 +101,9 @@ namespace SortOrStay
             int d = DigitPressed(kb);
             if (d >= 1 && d <= items.Count && ShortcutsAllowed() && !(kb.leftCtrlKey.isPressed)) UseByKey(items[d - 1]);
 
+            // walked away holding a key: hang it back up
             var pc = Player;
-            if (pc != null)
-            {
-                // keep every key on screen while the player works at the rack (first and third person)
-                Vector3 off = pc.transform.position - keyBox.center;
-                off.y = 0f;
-                bool want = !Solved && inputEnabled && off.magnitude < frameRange;
-                if (want) { pc.FrameBounds(keyBox); framing = true; }
-                else if (framing) { pc.ClearFrame(); framing = false; }
-
-                // walked away holding a key: hang it back up
-                if (selected != null && !busy && Vector3.Distance(pc.Chest, selected.transform.position) > 1.6f) PutDown();
-            }
+            if (pc != null && selected != null && !busy && Vector3.Distance(pc.Chest, selected.transform.position) > 1.6f) PutDown();
 
 #if UNITY_EDITOR
             // play-testing shortcut (editor only): Ctrl+N makes the next correct bubble sort move
