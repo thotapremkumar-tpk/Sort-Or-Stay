@@ -117,9 +117,7 @@ namespace SortOrStay
         Vector3[] rootRest;
         Renderer[][] bodyRenderers;
         bool forceHidden;
-        int hideState = -1;                    // 0 visible, 1 shadows only, 2 hidden, 3 visible without the head
-        Transform[] heads;
-        Vector3[] headScale;
+        int hideState = -1;                    // 0 visible, 1 shadows only, 2 hidden
 
         // keeping a puzzle's objects in view
         bool frameOn;
@@ -156,16 +154,12 @@ namespace SortOrStay
             eyeHeights = new float[n];
             rootRest = new Vector3[n];
             bodyRenderers = new Renderer[n][];
-            heads = new Transform[n];
-            headScale = new Vector3[n];
             for (int i = 0; i < n; i++)
             {
                 if (avatars[i] == null) continue;
                 bodyRenderers[i] = avatars[i].GetComponentsInChildren<Renderer>(true);
                 eyeHeights[i] = 1.62f;
                 var head = FindDeep(avatars[i], "Bip01 Head");
-                heads[i] = head;
-                if (head != null) headScale[i] = head.localScale;
                 if (head != null) eyeHeights[i] = Mathf.Clamp(head.position.y - transform.position.y + 0.07f, 1.35f, 1.85f);
                 if (rootBones != null && i < rootBones.Length && rootBones[i] != null)
                     rootRest[i] = avatars[i].InverseTransformPoint(rootBones[i].position);
@@ -561,10 +555,6 @@ namespace SortOrStay
 
             if (!cinematic) PlaceCamera(Time.deltaTime, false);
             UpdateVisibility();
-
-            // first person with the camera backed off to frame a puzzle: the body shows (so the hands do), the head does not
-            if (heads != null && AvatarIndex < heads.Length && heads[AvatarIndex] != null)
-                heads[AvatarIndex].localScale = hideState == 3 ? headScale[AvatarIndex] * 0.001f : headScale[AvatarIndex];
         }
 
         // ------------------------------------------------------------ camera
@@ -603,6 +593,9 @@ namespace SortOrStay
             float k = Mathf.SmoothStep(0f, 1f, viewBlend);
 
             Vector3 eye = transform.position + Vector3.up * EyeHeight + Quaternion.Euler(0f, yaw, 0f) * new Vector3(0f, 0f, 0.12f);
+            // first person while framing: the eye rises a little over the right shoulder so the whole body,
+            // head and both hands included, stays visible below it once the camera backs off
+            eye += Quaternion.Euler(0f, yaw, 0f) * new Vector3(0.3f, 0.32f, 0f) * fk;
             Vector3 third = pivot + dir * (len * camT);
             Vector3 pos = Vector3.Lerp(eye, third, k);
 
@@ -645,7 +638,7 @@ namespace SortOrStay
             {
                 Vector3 head = transform.position + Vector3.up * (EyeHeight - 0.05f);
                 bool close = Vector3.Distance(cam.transform.position, head) < 0.42f || (firstPerson && viewBlend < 0.35f);
-                if (close) state = firstPerson && framePull > 0.6f ? 3 : 1;
+                if (close) state = firstPerson && framePull > 0.6f ? 0 : 1;   // backed off to frame a puzzle: show the whole avatar
             }
             if (state == hideState) return;
             hideState = state;

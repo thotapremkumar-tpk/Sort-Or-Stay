@@ -145,6 +145,9 @@ namespace SortOrStay
 
         Vector3 Grip => Vector3.down * 0.09f + slots[0].forward * 0.02f;
 
+        /// Hook 1 is on the player's left: the left key of a pair goes in the left hand, the right key in the right.
+        static int HandFor(int idx, int pairLeft) => idx == pairLeft ? HandReach.Left : HandReach.Right;
+
         public override void OnItemClicked(SortItem clicked)
         {
             if (!AcceptsInput) return;
@@ -166,8 +169,8 @@ namespace SortOrStay
             key.Highlight(SortItem.SelectedColor);
             key.Kick(25f);
             ProceduralSfx.Play(ProceduralSfx.Select, key.transform.position, 0.6f);
-            if (Hand != null) Hand.Hold(key.transform, Grip);
             int i = items.IndexOf(key);
+            if (Hand != null) Hand.Hold(HandFor(i, cmp), key.transform, Grip);
             Lift(key, slots[i].position + slots[i].forward * 0.07f + Vector3.up * 0.03f);
         }
 
@@ -249,21 +252,30 @@ namespace SortOrStay
             busy = true;
             swaps++;
             passSwaps++;
-            var carried = selected;                       // the hand keeps hold of the key it picked up
-            if (carried == null) { carried = items[i]; if (Hand != null) Hand.Hold(carried.transform, Grip); }
             selected = null;
             if (lift != null) StopCoroutine(lift);
-            (items[i], items[j]) = (items[j], items[i]);
-            items[i].Highlight(SortItem.CompareColor);
-            items[j].Highlight(SortItem.CompareColor);
+            SortItem leftKey = items[i], rightKey = items[j];
 
-            ProceduralSfx.Play(ProceduralSfx.Swap, slots[i].position, 0.8f);
+            // one key in each hand: the second hand reaches for its key and lifts it too
+            if (Hand != null)
+            {
+                Hand.Hold(HandReach.Left, leftKey.transform, Grip);
+                Hand.Hold(HandReach.Right, rightKey.transform, Grip);
+            }
+            leftKey.Highlight(SortItem.SelectedColor);
+            rightKey.Highlight(SortItem.SelectedColor);
             Vector3 outward = slots[i].forward;          // into the room, toward the player
-            var other = carried == items[i] ? items[j] : items[i];
-            int carriedTo = items.IndexOf(carried), otherTo = items.IndexOf(other);
-            StartCoroutine(ArcTo(other, slots[otherTo].position, outward * 0.04f - Vector3.up * 0.03f));
-            yield return ArcTo(carried, slots[carriedTo].position, outward * 0.11f + Vector3.up * 0.04f, 0.55f);
+            StartCoroutine(MoveTo(leftKey, slots[i].position + outward * 0.07f + Vector3.up * 0.03f, 0.25f));
+            yield return MoveTo(rightKey, slots[j].position + outward * 0.07f + Vector3.up * 0.03f, 0.25f);
+
+            // cross them over: the left hand passes in front, the right hand behind
+            (items[i], items[j]) = (items[j], items[i]);
+            ProceduralSfx.Play(ProceduralSfx.Swap, slots[i].position, 0.8f);
+            StartCoroutine(ArcTo(rightKey, slots[i].position, outward * 0.03f - Vector3.up * 0.03f, 0.55f));
+            yield return ArcTo(leftKey, slots[j].position, outward * 0.12f + Vector3.up * 0.04f, 0.55f);
             if (Hand != null) Hand.Release();
+            leftKey.Highlight(SortItem.CompareColor);
+            rightKey.Highlight(SortItem.CompareColor);
 
             items[i].Kick(-60f);
             items[j].Kick(60f);
