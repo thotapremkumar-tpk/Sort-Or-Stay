@@ -46,8 +46,20 @@ namespace SortOrStay
                 yield break;
             }
 
-            if (ui != null) ui.ShowEndCard($"FLOORS 1–{levelNumber} ESCAPED", Scoreboard() + $"\n\nNext:  {nextFloorLabel}  (coming soon)",
-                                           "R  play this floor again      ·      1 / 2 / 3  jump to a floor");
+            if (ui != null)
+            {
+                if (levelNumber >= GameState.FloorScenes.Length)
+                {
+                    bool all = GameState.Instance.results.Count >= GameState.FloorScenes.Length;
+                    ui.ShowEndCard(all ? "YOU ESCAPED  ·  ALL 5 FLOORS" : "YOU ESCAPED",
+                                   Scoreboard() + (all ? "\n\nFive floors, five sorting algorithms, one way out."
+                                                       : "\n\nPlay from Floor 1 to see all five algorithms on one scoreboard."),
+                                   "R  play the Vault again      ·      1 - 5  jump to a floor");
+                }
+                else
+                    ui.ShowEndCard($"FLOORS 1–{levelNumber} ESCAPED", Scoreboard() + $"\n\nNext:  {nextFloorLabel}  (coming soon)",
+                                   "R  play this floor again      ·      1 - 5  jump to a floor");
+            }
             PlayerController.FreeCursor();
         }
 
@@ -91,9 +103,8 @@ namespace SortOrStay
             var kb = Keyboard.current;
             if (kb == null) return;
             if (kb.rKey.wasPressedThisFrame) Reload();
-            if (kb.digit1Key.wasPressedThisFrame) LoadFloor(1);
-            if (kb.digit2Key.wasPressedThisFrame) LoadFloor(2);
-            if (kb.digit3Key.wasPressedThisFrame) LoadFloor(3);
+            for (int f = 1; f <= GameState.FloorScenes.Length; f++)
+                if (kb[Key.Digit1 + (f - 1)].wasPressedThisFrame || kb[Key.Numpad1 + (f - 1)].wasPressedThisFrame) LoadFloor(f);
         }
     }
 }

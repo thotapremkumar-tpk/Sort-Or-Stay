@@ -19,6 +19,9 @@ namespace SortOrStay
 
         bool skip, finished;
 
+        /// Cut the intro short (same as pressing Space).
+        public void Skip() { if (!finished) skip = true; }
+
         void Update()
         {
             var kb = Keyboard.current;

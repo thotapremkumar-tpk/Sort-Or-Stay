@@ -6,7 +6,7 @@ GDIT game project · Group 3 · IIIT Sri City · built with Unity 6
 
 ![Floor 1 – the Locked Room](Docs/screenshots/floor1-locked-room.jpg)
 
-You wake up locked in a five-floor building. Every floor is a room whose exit opens only when its objects are in order, and the room's rule *is* the algorithm: on Floor 1 only neighbouring keys may swap (bubble sort), on Floor 2 crate weights stay hidden until you weigh them (selection sort), on Floor 3 the books on the shelf are sorted in place, each one walked left past bigger books (insertion sort). Every move is checked; a wrong move gets a reason, and after each floor a debrief compares your moves with the fewest possible.
+You wake up locked in a five-floor building. Every floor is a room whose exit opens only when its objects are in order, and the room's rule *is* the algorithm: on Floor 1 only neighbouring keys may swap (bubble sort), on Floor 2 crate weights stay hidden until you weigh them (selection sort), on Floor 3 the books on the shelf are sorted in place, each one walked left past bigger books (insertion sort), on Floor 4 the data blocks are split apart and merged back two runs at a time (merge sort), and on Floor 5 the gold bars are split around a pivot behind a laser gate (quick sort). Every move is checked; a wrong move gets a reason, and after each floor a debrief compares your moves with the fewest possible.
 
 ## Floors
 
@@ -15,8 +15,8 @@ You wake up locked in a five-floor building. Every floor is a room whose exit op
 | 1 | Locked Room | Bubble sort | 6 numbered keys on hooks; only neighbours may swap | Built |
 | 2 | Storage Room | Selection sort | 7 crates with hidden weights; weigh every crate left, a crane moves the lightest to the next bay | Built |
 | 3 | Library | Insertion sort | 8 books start on the shelf out of order; pull a book out, shift bigger books right, place it | Built |
-| 4 | Control Room | Merge sort | — | Next |
-| 5 | Vault | Quick sort | — | Planned |
+| 4 | Control Room | Merge sort | 8 data blocks on a merge console; SPLIT halves every run until each block stands alone, then two runs merge at a time by taking the smaller front block into the merge row | Built |
+| 5 | Final Vault | Quick sort | 8 gold bars on a marble counter; raise the pivot (last bar), send each smaller bar behind the laser gate, drop the pivot into its final slot, repeat on each side; the vault door opens on a sorted row | Built |
 
 | Floor 2 – Storage Room | Floor 3 – Library |
 |---|---|
@@ -37,7 +37,7 @@ You wake up locked in a five-floor building. Every floor is a room whose exit op
 1. Install **Unity 6000.6.2f1** (Unity 6.6) with Unity Hub.
 2. Clone this repo and add the folder in Unity Hub (*Add → Add project from disk*).
 3. The first open re-imports all assets and rebuilds `Library/` (a few minutes).
-4. Open `Assets/SortOrStay/Scenes/Level1_Bubble.unity` and press **Play**. Floors 2 and 3 load from the door/stairwell or from the pause menu.
+4. Open `Assets/SortOrStay/Scenes/Level1_Bubble.unity` and press **Play**. Floors 2–5 load from the door/stairwell or from the pause menu; after Floor 5 the end card shows the scoreboard of every floor.
 
 Render pipeline: URP (Forward+), linear colour space, new Input System.
 
@@ -50,9 +50,10 @@ Render pipeline: URP (Forward+), linear colour space, new Input System.
 | Scroll | Zoom |
 | WASD | Walk |
 | Space | Jump |
-| Number keys | Floor 1: pick the key on that hook · Floor 2: use the crate on that bay · Floor 3: use the book (or glowing spot) at that shelf position |
+| Number keys | Floor 1: pick the key on that hook · Floor 2: use the crate on that bay · Floor 3: use the book (or glowing spot) at that shelf position · Floor 4: 1 / 2 take the left / right front block · Floor 5: 1 smaller, 2 bigger than the pivot |
 | F | Floor 3: pull out the next book |
-| Q | Floor 2: weigh all remaining crates |
+| Q | Floor 2: weigh all remaining crates · Floor 4: split every run in half |
+| P | Floor 5: raise the pivot / drop it into its slot |
 | H | Hint |
 | V | First / third person |
 | C | Switch character (Alex / Maya) |
@@ -64,7 +65,8 @@ Render pipeline: URP (Forward+), linear colour space, new Input System.
 
 Menu **Sort or Stay** in the Unity editor:
 
-- **Build Level 1 / 2 / 3** — rebuilds each floor's scene from code (`Assets/SortOrStay/Editor/BuildLevel*.cs`, shared parts in `Kit.cs`).
+- **Build Level 1 / 2 / 3 / 4 / 5**, **Build Levels 4 + 5** — rebuilds each floor's scene from code (`Assets/SortOrStay/Editor/BuildLevel*.cs`, shared parts in `Kit.cs`).
+- **Dev: Auto-play Floors 4 and 5** / **Dev: Hands-on test Floors 4 and 5** — editor-only play-testers. Auto-play takes the next correct step every half second; the hands-on test walks the avatar over and clicks like a player, with deliberate wrong moves and hints. Both log every step and the debrief to `Logs/SortOrStay_autoplay.txt` and save screenshots to `Screenshots/`. In the editor, Ctrl+N also performs the next correct step on any floor.
 - **Setup Player Characters** — re-applies the Rocketbox import settings and rebuilds the avatar materials and Animator controllers.
 - **Build Basic Demo (Level 1 Bubble Sort)** — a minimal fixed-camera bubble-sort room.
 - **Capture Game Screenshot** — same as **K** in Play mode.
@@ -74,9 +76,9 @@ Menu **Sort or Stay** in the Unity editor:
 ```
 Assets/
   SortOrStay/
-    Scripts/      gameplay: puzzles (Bubble/Selection/InsertionPuzzle), player, interactor, HUD, doors, level manager
+    Scripts/      gameplay: puzzles (Bubble/Selection/Insertion/Merge/QuickPuzzle), player, interactor, HUD, doors, level manager
     Editor/       scene builders and import tools
-    Scenes/       Level1_Bubble, Level2_Selection, Level3_Insertion
+    Scenes/       Level1_Bubble, Level2_Selection, Level3_Insertion, Level4_Merge, Level5_Quick
     BasicDemo/    stand-alone basic bubble-sort demo
     Materials/ Player/ Settings/
   ThirdParty/

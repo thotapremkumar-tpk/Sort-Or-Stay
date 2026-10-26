@@ -87,8 +87,12 @@ namespace SortOrStay
         public void SetStats(string s) { stats = s; }
         public void ShowControls(float seconds) { controlsUntil = Time.time + seconds; }
 
+        public string PopupTitle => popupTitle;
+        public string PopupBody => popupBody;
+
         public void ShowPopup(string title, string body, string footer)
         {
+            if (EndCardOpen) return;            // the floor is already over: the end card stays on top
             popupTitle = title; popupBody = body; popupFooter = footer;
             PopupOpen = true; popupOpenedAt = Time.unscaledTime;
         }
@@ -282,7 +286,7 @@ namespace SortOrStay
             var pc = PlayerController.Instance;
             const float bw = 420f, bh = 54f, gap = 12f;
             int rows = 6;
-            bool[] floors = { LevelManager.FloorExists(1), LevelManager.FloorExists(2), LevelManager.FloorExists(3) };
+            int floorCount = GameState.FloorScenes.Length;
             float ph = 120f + rows * (bh + gap) + 40f;
             Rect r = new Rect((W - 520f) * 0.5f, (H - ph) * 0.5f, 520f, ph);
 
@@ -298,11 +302,12 @@ namespace SortOrStay
             y += bh + gap;
             if (Button(new Rect(x, y, bw, bh), "Restart this floor")) LevelManager.Reload();
             y += bh + gap;
-            float fw = (bw - 2f * gap) / 3f;
-            for (int i = 0; i < 3; i++)
+            // one button per floor; floors whose scene is not built yet are greyed out
+            float fw = (bw - (floorCount - 1) * gap) / floorCount;
+            for (int i = 0; i < floorCount; i++)
             {
-                GUI.enabled = floors[i];
-                if (Button(new Rect(x + i * (fw + gap), y, fw, bh), "Floor " + (i + 1))) LevelManager.LoadFloor(i + 1);
+                GUI.enabled = LevelManager.FloorExists(i + 1);
+                if (Button(new Rect(x + i * (fw + gap), y, fw, bh), "F" + (i + 1))) LevelManager.LoadFloor(i + 1);
             }
             GUI.enabled = true;
             y += bh + gap;
