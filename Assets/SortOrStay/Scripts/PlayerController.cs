@@ -72,6 +72,10 @@ namespace SortOrStay
         public View view = View.Third;
         public float firstPersonFov = 70f;     // a little wider than the follow cameras, so close-up things fit
 
+        [Header("Walk map (click to walk)")]
+        public float navBoundsHeight = 24f;    // the building uses one storey's worth, so floors above and below stay out
+        public float navCenterOffset = 0f;
+
         [Header("State")]
         public bool canMove = true;
         public bool canLook = true;
@@ -161,6 +165,7 @@ namespace SortOrStay
         int corner;
         Vector3 walkGoal;                      // the thing's closest point (or the clicked floor point)
         float arriveDistance;
+        bool finalLeg;
         Action onArrive;
         float stuckTimer;
         Vector3 stuckPos;
@@ -373,18 +378,27 @@ namespace SortOrStay
 
         /// Walk (around obstacles) until the avatar is within 'arriveDist' metres of 'goal' (measured flat
         /// on the floor), then call 'arrive'. Typing WASD cancels it.
-        public void WalkTo(Vector3 goal, float arriveDist, Action arrive)
+        public void WalkTo(Vector3 goal, float arriveDist, Action arrive) => WalkTo(goal, arriveDist, arrive, false);
+
+        /// direct: walk in a straight line, without the walk map (stairs between floors, where the map of one
+        /// storey cannot see where the flight ends).
+        public void WalkTo(Vector3 goal, float arriveDist, Action arrive, bool direct) => Walk(goal, arriveDist, arrive, direct, false);
+
+        /// A clicked spot on a floor, landing or stair: walk to that very spot (also up or down the stairs).
+        public void WalkToSpot(Vector3 spot) => Walk(spot, 0.15f, null, false, true);
+
+        void Walk(Vector3 goal, float arriveDist, Action arrive, bool direct, bool spot)
         {
             walkGoal = goal;
             arriveDistance = arriveDist;
             onArrive = arrive;
 
             Vector3 start = transform.position;
-            Vector3 end = new Vector3(goal.x, start.y, goal.z);
+            Vector3 end = spot ? goal : new Vector3(goal.x, start.y, goal.z);
             corners = null;
-            if (NavMesh.SamplePosition(start, out NavMeshHit hs, 1.2f, NavMesh.AllAreas)
-                && NavMesh.SamplePosition(end, out NavMeshHit he, 2.5f, NavMesh.AllAreas)
-                && NavMesh.CalculatePath(hs.position, he.position, NavMesh.AllAreas, path)
+            if (!direct && NavMesh.SamplePosition(start, out NavMeshHit hs, 1.2f, NavMesh.AllAreas)
+                && SampleEnd(start, end, spot, out Vector3 he)
+                && NavMesh.CalculatePath(hs.position, he, NavMesh.AllAreas, path)
                 && path.status != NavMeshPathStatus.PathInvalid && path.corners.Length > 0)
             {
                 corners = path.corners;
@@ -392,9 +406,38 @@ namespace SortOrStay
             if (corners == null) corners = new[] { start, end };     // no navmesh: straight line
 
             corner = corners.Length > 1 ? 1 : 0;
+            finalLeg = false;
             autoWalk = true;
             stuckTimer = 0f;
             stuckPos = start;
+        }
+
+        /// Where on the walk map to head for. A thing (key, crate, pad) is approached on the floor at the player's
+        /// height, from the player's side: stepping back from it towards the player until there is floor, so the
+        /// top of the counter or table it stands on is never taken for the place to walk to.
+        static bool SampleEnd(Vector3 start, Vector3 end, bool spot, out Vector3 result)
+        {
+            result = end;
+            if (spot)
+            {
+                if (!NavMesh.SamplePosition(end, out NavMeshHit hit, 0.8f, NavMesh.AllAreas)) return false;
+                result = hit.position;
+                return true;
+            }
+            Vector3 back = start - end;
+            back.y = 0f;
+            float len = back.magnitude;
+            if (len > 0.01f) back /= len;
+            float reach = Mathf.Min(2f, len);
+            for (float k = 0f; k <= reach + 0.001f; k += 0.25f)
+                if (NavMesh.SamplePosition(end + back * k, out NavMeshHit near, 0.5f, NavMesh.AllAreas) && Mathf.Abs(near.position.y - end.y) < 0.45f)
+                {
+                    result = near.position;
+                    return true;
+                }
+            if (!NavMesh.SamplePosition(end, out NavMeshHit any, 2.5f, NavMesh.AllAreas)) return false;
+            result = any.position;
+            return true;
         }
 
         public void StopWalking()
@@ -434,8 +477,14 @@ namespace SortOrStay
             if (corner >= corners.Length)
             {
                 if (onArrive == null) { StopWalking(); return Vector3.zero; }
-                if (Flat(pos, walkGoal) <= arriveDistance + 0.9f) Arrive(); else GiveUp();
-                return Vector3.zero;
+                if (Flat(pos, walkGoal) <= arriveDistance + 0.9f) { Arrive(); return Vector3.zero; }
+                if (finalLeg) { GiveUp(); return Vector3.zero; }
+                // the walk map ended short of the thing (e.g. it was reached from the side): go the last bit straight
+                finalLeg = true;
+                corners = new[] { pos, new Vector3(walkGoal.x, pos.y, walkGoal.z) };
+                corner = 1;
+                stuckTimer = 0f;
+                stuckPos = pos;
             }
 
             stuckTimer += Time.deltaTime;
@@ -462,7 +511,7 @@ namespace SortOrStay
             try
             {
                 if (navInstance.valid) navInstance.Remove();
-                var bounds = new Bounds(transform.position, new Vector3(60f, 24f, 60f));
+                var bounds = new Bounds(transform.position + Vector3.up * navCenterOffset, new Vector3(60f, navBoundsHeight, 60f));
                 var sources = new List<NavMeshBuildSource>();
                 NavMeshBuilder.CollectSources(bounds, Physics.DefaultRaycastLayers, NavMeshCollectGeometry.PhysicsColliders, 0,
                                               new List<NavMeshBuildMarkup>(), sources);

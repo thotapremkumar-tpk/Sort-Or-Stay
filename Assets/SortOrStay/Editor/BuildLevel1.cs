@@ -81,44 +81,22 @@ namespace SortOrStayEditor
 
         static void BuildNow()
         {
-            Directory.CreateDirectory(ROOT + "Scenes");
-            Directory.CreateDirectory(MATDIR);
-            Directory.CreateDirectory(ROOT + "Settings");
-            AssetDatabase.Refresh();
-
-            font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(TMP_FONT);
             Kit.Begin();
             Kit.EnsureCharacters();
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
-            MakeMaterials();
-
-            var root = new GameObject("Level1_LockedRoom").transform;
-            BuildRoom(root);
-            Door door = BuildDoor(root, out Renderer[] leds);
-            Transform[] slots = BuildRack(root);
-            List<SortItem> keys = BuildKeys(root, slots);
-            Terminal terminal = BuildTerminal(root);
-            BuildSign(root);
-            BuildProps(root);
-            BuildLights(root);
+            var parts = BuildFloor();
+            var root = parts.root;
+            var door = parts.exitDoor;
 
             // ---------- player: realistic human avatar, third-person camera ----------
             var pc = Kit.BuildPlayer(SPAWN, 0f);
 
             // ---------- systems ----------
-            var sys = new GameObject("Systems");
+            var sys = parts.systems.gameObject;
             var ui = sys.AddComponent<GameUI>();
-            ui.levelTitle = "FLOOR 1  ·  THE LOCKED ROOM";
+            ui.levelTitle = parts.title;
             ui.floor = 1;
-
-            var puzzle = sys.AddComponent<BubblePuzzle>();
-            puzzle.slots = slots;
-            puzzle.items = keys;
-            puzzle.door = door;
-            puzzle.terminal = terminal;
-            puzzle.slotLeds = leds;
-            terminal.puzzle = puzzle;
 
             var lm = sys.AddComponent<LevelManager>();
             lm.levelNumber = 1;
@@ -128,7 +106,7 @@ namespace SortOrStayEditor
 
             var intro = sys.AddComponent<IntroSequence>();
             intro.player = pc;
-            intro.puzzle = puzzle;
+            intro.puzzle = parts.puzzle;
 
             BuildCorridor(root, lm);
             Kit.BrightPostFx(sys.transform, "Level1_PostFX", 0.2f);
@@ -144,6 +122,45 @@ namespace SortOrStayEditor
             Selection.activeGameObject = root.gameObject;
 
             Debug.Log("Sort or Stay: Level 1 'The Locked Room' built and saved to " + SCENE + ". Press Play.");
+        }
+
+        /// The room, its door, the keys and the puzzle, built at the origin into the open scene.
+        /// Used by the standalone scene above and by the five-floor building (Kit.BuildingMode).
+        public static Kit.FloorParts BuildFloor()
+        {
+            Directory.CreateDirectory(ROOT + "Scenes");
+            Directory.CreateDirectory(MATDIR);
+            Directory.CreateDirectory(ROOT + "Settings");
+            font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(TMP_FONT);
+            MakeMaterials();
+
+            var root = new GameObject("Level1_LockedRoom").transform;
+            BuildRoom(root);
+            Door door = BuildDoor(root, out Renderer[] leds);
+            Transform[] slots = BuildRack(root);
+            List<SortItem> keys = BuildKeys(root, slots);
+            Terminal terminal = BuildTerminal(root);
+            BuildSign(root);
+            BuildProps(root);
+            BuildLights(root);
+
+            var sys = Kit.FloorSystems(root, 1);
+            var puzzle = sys.gameObject.AddComponent<BubblePuzzle>();
+            puzzle.slots = slots;
+            puzzle.items = keys;
+            puzzle.door = door;
+            puzzle.terminal = terminal;
+            puzzle.slotLeds = leds;
+            terminal.puzzle = puzzle;
+
+            return new Kit.FloorParts
+            {
+                root = root, systems = sys, puzzle = puzzle, exitDoor = door, number = 1,
+                title = "FLOOR 1  ·  THE LOCKED ROOM", roomName = "The Locked Room",
+                objective = IntroSequence.DefaultObjective,
+                lines = new[] { "Floor 1.  The Locked Room." },
+                width = W, depth = D, height = H, spawn = SPAWN
+            };
         }
 
         // ============================================================ materials

@@ -6,6 +6,9 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
+    path: Assets/SortOrStay/Scenes/Building.unity
+    guid: 6697cb78e58ab4a4fa221700262b2948
+  - enabled: 1
     path: Assets/SortOrStay/Scenes/Level1_Bubble.unity
     guid: 9d984d1760d164854b43ef191c9051fc
   - enabled: 1

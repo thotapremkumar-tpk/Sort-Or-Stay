@@ -98,14 +98,19 @@ namespace SortOrStay
             if (mergeStrip != null) { mergeStripMat = mergeStrip.material; mergeStripMat.EnableKeyword("_EMISSION"); }
             if (splitButton != null) splitButtonRest = splitButton.localScale;
 
-            // first person: stand the eye off the console far enough that the whole rack fits on screen
-            if (Player != null && rackRow != null)
-            {
-                float half = ((N - 1) * pitch + (N - 1) * runGap) * 0.5f;
-                Player.SetViewStandOff(rackRow.position, -rackRow.forward, rackRow.right, half, firstPersonStandOff);
-            }
+            if (IsCurrent) ApplyViewStandOff();
             Setup();
         }
+
+        /// First person: stand the eye off the console far enough that the whole rack fits on screen.
+        protected override void ApplyViewStandOff()
+        {
+            if (Player == null || rackRow == null) return;
+            float half = ((N - 1) * pitch + (N - 1) * runGap) * 0.5f;
+            Player.SetViewStandOff(rackRow.position, -rackRow.forward, rackRow.right, half, firstPersonStandOff);
+        }
+
+        protected override void RefreshDisplays() => Refresh();
 
         public override void Setup()
         {
@@ -579,7 +584,7 @@ namespace SortOrStay
             if (!busy) PlaceStrips();
 
             if (GameUI.Instance != null)
-                GameUI.Instance.SetStats($"COMPARISONS  {comparisons}      MOVES  {moves}      HINTS  {hintsUsed}");
+                SetHudStats($"COMPARISONS  {comparisons}      MOVES  {moves}      HINTS  {hintsUsed}");
 
             string step = Solved ? "ALL SORTED"
                 : splitting ? $"STEP 1   DIVIDE   ·   runs of {MaxRunLength()}   ·   press SPLIT"

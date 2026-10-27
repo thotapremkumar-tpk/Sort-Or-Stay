@@ -41,6 +41,57 @@ namespace SortOrStayEditor
             Begin();
             EnsureCharacters();
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+
+            var parts = BuildFloor();
+            var root = parts.root;
+            var door = parts.exitDoor;
+            var puzzle = parts.puzzle;
+
+            // ---------- player ----------
+            var player = BuildPlayer(SPAWN, 0f);
+
+            // ---------- systems ----------
+            var sys = parts.systems;
+            BuildUI(sys, parts.title, 2);
+
+            var lm = sys.gameObject.AddComponent<LevelManager>();
+            lm.levelNumber = 2;
+            lm.nextScene = "Level3_Insertion";
+            lm.nextFloorLabel = "Floor 3  ·  the Library  (Insertion Sort)";
+            lm.door = door;
+            lm.player = player;
+
+            var overview = new GameObject("IntroCamera").transform;
+            overview.SetParent(sys, false);
+            overview.position = new Vector3(4.1f, 3.55f, -4.5f);
+            overview.rotation = Quaternion.LookRotation(new Vector3(-0.6f, 0.5f, 1.4f) - overview.position);
+            var intro = sys.gameObject.AddComponent<LevelIntro>();
+            intro.player = player;
+            intro.puzzle = puzzle;
+            intro.overview = overview;
+            intro.objective = parts.objective;
+            intro.lines = parts.lines;
+
+            BuildStairwell(root, HD + T, H, DOOR_W, lm, "FLOOR 3", mTread, mWall, mCeil, mTread, mExit);
+            BrightPostFx(sys, "Level2_PostFX", 0.15f);
+
+            // ---------- lighting ----------
+            BrightEnvironment(new Color(0.80f, 0.84f, 0.90f), new Color(0.66f, 0.66f, 0.64f), new Color(0.42f, 0.40f, 0.38f));
+            var sun = Sun(root, new Vector3(36f, -108f, 0f), new Color(1f, 0.95f, 0.86f), 1.6f);
+            RenderSettings.sun = sun;
+
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene, SCENE);
+            AddToBuildSettings(SCENE, 1);
+            AssetDatabase.SaveAssets();
+            Selection.activeGameObject = root.gameObject;
+            Debug.Log("Sort or Stay: Level 2 'The Storage Room' built and saved to " + SCENE + ". Press Play.");
+        }
+
+        /// The room, its doors, the crates and the puzzle, built at the origin into the open scene.
+        /// Used by the standalone scene above and by the five-floor building (Kit.BuildingMode).
+        public static FloorParts BuildFloor()
+        {
             MakeMaterials();
 
             var root = new GameObject("Level2_StorageRoom").transform;
@@ -59,13 +110,7 @@ namespace SortOrStayEditor
             BuildProps(root);
             BuildLights(root);
 
-            // ---------- player ----------
-            var player = BuildPlayer(SPAWN, 0f);
-
-            // ---------- systems ----------
-            var sys = new GameObject("Systems").transform;
-            BuildUI(sys, "FLOOR 2  ·  THE STORAGE ROOM", 2);
-
+            var sys = FloorSystems(root, 2);
             var puzzle = sys.gameObject.AddComponent<SelectionPuzzle>();
             puzzle.slots = slots;
             puzzle.items = crates;
@@ -83,45 +128,21 @@ namespace SortOrStayEditor
             scanBtn.puzzle = puzzle;
             hintBtn.puzzle = puzzle;
 
-            var lm = sys.gameObject.AddComponent<LevelManager>();
-            lm.levelNumber = 2;
-            lm.nextScene = "Level3_Insertion";
-            lm.nextFloorLabel = "Floor 3  ·  the Library  (Insertion Sort)";
-            lm.door = door;
-            lm.player = player;
-
-            var overview = new GameObject("IntroCamera").transform;
-            overview.SetParent(sys, false);
-            overview.position = new Vector3(4.1f, 3.55f, -4.5f);
-            overview.rotation = Quaternion.LookRotation(new Vector3(-0.6f, 0.5f, 1.4f) - overview.position);
-            var intro = sys.gameObject.AddComponent<LevelIntro>();
-            intro.player = player;
-            intro.puzzle = puzzle;
-            intro.overview = overview;
-            intro.objective = "Sort the crates <b>light to heavy</b> into bays 1-7.\n" +
-                              "Each pass: <b>weigh every crate that's left</b>, then send the <b>lightest</b> to the next bay.\n" +
-                              "<size=20>Click a crate or press its bay number (1-7)  ·  Q weighs them all  ·  H hint</size>";
-            intro.lines = new[]
+            return new FloorParts
             {
-                "Floor 2.  A storage room, full of daylight.",
-                "Seven crates on seven scales... and every reading is blank.",
-                "Light to heavy.  Find the lightest, every single pass."
+                root = root, systems = sys, puzzle = puzzle, exitDoor = door, number = 2,
+                title = "FLOOR 2  ·  THE STORAGE ROOM", roomName = "The Storage Room",
+                objective = "Sort the crates <b>light to heavy</b> into bays 1-7.\n" +
+                            "Each pass: <b>weigh every crate that's left</b>, then send the <b>lightest</b> to the next bay.\n" +
+                            "<size=20>Click a crate or press its bay number (1-7)  ·  Q weighs them all  ·  H hint</size>",
+                lines = new[]
+                {
+                    "Floor 2.  A storage room, full of daylight.",
+                    "Seven crates on seven scales... and every reading is blank.",
+                    "Light to heavy.  Find the lightest, every single pass."
+                },
+                width = W, depth = D, height = H, spawn = SPAWN
             };
-
-            BuildStairwell(root, HD + T, H, DOOR_W, lm, "FLOOR 3", mTread, mWall, mCeil, mTread, mExit);
-            BrightPostFx(sys, "Level2_PostFX", 0.15f);
-
-            // ---------- lighting ----------
-            BrightEnvironment(new Color(0.80f, 0.84f, 0.90f), new Color(0.66f, 0.66f, 0.64f), new Color(0.42f, 0.40f, 0.38f));
-            var sun = Sun(root, new Vector3(36f, -108f, 0f), new Color(1f, 0.95f, 0.86f), 1.6f);
-            RenderSettings.sun = sun;
-
-            EditorSceneManager.MarkSceneDirty(scene);
-            EditorSceneManager.SaveScene(scene, SCENE);
-            AddToBuildSettings(SCENE, 1);
-            AssetDatabase.SaveAssets();
-            Selection.activeGameObject = root.gameObject;
-            Debug.Log("Sort or Stay: Level 2 'The Storage Room' built and saved to " + SCENE + ". Press Play.");
         }
 
         // ============================================================ materials
@@ -174,7 +195,7 @@ namespace SortOrStayEditor
             foreach (float z in wz) windows.Add(new Hole(z, 1.6f, 2.35f, 3.85f));
             WallAlongZ(room, "Wall_Right", HW + T * 0.5f, -HD - T, HD + T, H, T, mWall, windows.ToArray());
             WallAlongX(room, "Wall_Back", -HD - T * 0.5f, -HW, HW, H, T, mWall);
-            WallAlongX(room, "Wall_Front", HD + T * 0.5f, -HW, HW, H, T, mWall, new Hole(0f, DOOR_W, 0f, DOOR_H));
+            WallAlongX(room, "Wall_Front", HD + T * 0.5f, -HW, HW, H, T, mWall, FrontHoles(new Hole(0f, DOOR_W, 0f, DOOR_H)));
             for (int i = 0; i < wz.Length; i++)
                 WindowZ(room, "Window_" + i, HW + T * 0.5f, wz[i], 1.6f, 2.35f, 3.85f, T, mFrame, mGlass, mWhite);
 
@@ -185,20 +206,23 @@ namespace SortOrStayEditor
             Cube("Band_B", new Vector3(0f, bh * 0.5f, -HD + 0.006f), new Vector3(W, bh, 0.012f), mBand, room, false);
             float segW = (W - DOOR_W) * 0.5f;
             Cube("Band_FL", new Vector3(-(DOOR_W * 0.5f + segW * 0.5f), bh * 0.5f, HD - 0.006f), new Vector3(segW, bh, 0.012f), mBand, room, false);
-            Cube("Band_FR", new Vector3(DOOR_W * 0.5f + segW * 0.5f, bh * 0.5f, HD - 0.006f), new Vector3(segW, bh, 0.012f), mBand, room, false);
+            FrontStrip(room, "Band_FR", DOOR_W * 0.5f, HW, bh * 0.5f, bh, HD - 0.006f, 0.012f, mBand);
             Cube("BandTrim_L", new Vector3(-HW + 0.012f, bh, 0f), new Vector3(0.024f, 0.04f, D), mWhite, room, false);
             Cube("BandTrim_R", new Vector3(HW - 0.012f, bh, 0f), new Vector3(0.024f, 0.04f, D), mWhite, room, false);
             Cube("BandTrim_B", new Vector3(0f, bh, -HD + 0.012f), new Vector3(W, 0.04f, 0.024f), mWhite, room, false);
 
-            // the door we came in by (back wall), closed
-            var back = Group("EntranceDoor", room);
-            back.localPosition = new Vector3(0f, 0f, -HD);
-            Cube("Frame", new Vector3(0f, 1.18f, 0.025f), new Vector3(1.32f, 2.36f, 0.05f), mDark, back, false);
-            Cube("Slab", new Vector3(0f, 1.13f, 0.055f), new Vector3(1.12f, 2.24f, 0.04f), mSteel, back, false);
-            Cube("Bar", new Vector3(0f, 1.05f, 0.09f), new Vector3(0.9f, 0.06f, 0.05f), mDark, back, false);
-            Cube("SignPlate", new Vector3(0f, 2.55f, 0.02f), new Vector3(0.8f, 0.2f, 0.02f), mWhite, back, false);
-            var st = Text("Sign", back, new Vector3(0f, 2.55f, 0.032f), new Vector2(0.74f, 0.15f), "STAIRS  DOWN", InkDark, TextAlignmentOptions.Center, true);
-            st.rectTransform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            // the door we came in by (back wall), closed. In the building you come in from the stair tower instead.
+            if (!BuildingMode)
+            {
+                var back = Group("EntranceDoor", room);
+                back.localPosition = new Vector3(0f, 0f, -HD);
+                Cube("Frame", new Vector3(0f, 1.18f, 0.025f), new Vector3(1.32f, 2.36f, 0.05f), mDark, back, false);
+                Cube("Slab", new Vector3(0f, 1.13f, 0.055f), new Vector3(1.12f, 2.24f, 0.04f), mSteel, back, false);
+                Cube("Bar", new Vector3(0f, 1.05f, 0.09f), new Vector3(0.9f, 0.06f, 0.05f), mDark, back, false);
+                Cube("SignPlate", new Vector3(0f, 2.55f, 0.02f), new Vector3(0.8f, 0.2f, 0.02f), mWhite, back, false);
+                var st = Text("Sign", back, new Vector3(0f, 2.55f, 0.032f), new Vector2(0.74f, 0.15f), "STAIRS  DOWN", InkDark, TextAlignmentOptions.Center, true);
+                st.rectTransform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            }
 
             // exit sign above the loading doors
             Cube("ExitSign", new Vector3(0f, DOOR_H + 0.28f, HD - 0.02f), new Vector3(0.7f, 0.22f, 0.04f), mExit, room, false);

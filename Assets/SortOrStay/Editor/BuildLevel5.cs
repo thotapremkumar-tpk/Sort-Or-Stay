@@ -55,6 +55,54 @@ namespace SortOrStayEditor
             Begin();
             EnsureCharacters();
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+
+            var parts = BuildFloor();
+            var root = parts.root;
+            var door = parts.exitDoor;
+            var puzzle = parts.puzzle;
+
+            var player = BuildPlayer(SPAWN, 0f);
+
+            var sys = parts.systems;
+            BuildUI(sys, parts.title, 5);
+
+            var lm = sys.gameObject.AddComponent<LevelManager>();
+            lm.levelNumber = 5;
+            lm.nextScene = "";                 // the last floor: walking out shows the final scoreboard
+            lm.nextFloorLabel = "";
+            lm.door = door;
+            lm.player = player;
+
+            var overview = new GameObject("IntroCamera").transform;
+            overview.SetParent(sys, false);
+            overview.position = new Vector3(4.2f, 3.2f, -3.8f);
+            overview.rotation = Quaternion.LookRotation(new Vector3(0f, 1.5f, 2.6f) - overview.position);
+            var intro = sys.gameObject.AddComponent<LevelIntro>();
+            intro.player = player;
+            intro.puzzle = puzzle;
+            intro.overview = overview;
+            intro.objective = parts.objective;
+            intro.lines = parts.lines;
+
+            BuildStairwell(root, HD + T, H, DOOR_W, lm, "EXIT", mTread, mWall, mCeil, mTread, mExit);
+            BrightPostFx(sys, "Level5_PostFX", 0.18f);
+
+            BrightEnvironment(new Color(0.86f, 0.84f, 0.82f), new Color(0.72f, 0.66f, 0.58f), new Color(0.46f, 0.40f, 0.34f));
+            var sun = Sun(root, new Vector3(40f, -120f, 0f), new Color(1f, 0.93f, 0.80f), 1.2f);
+            RenderSettings.sun = sun;
+
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene, SCENE);
+            AddToBuildSettings(SCENE, 4);
+            AssetDatabase.SaveAssets();
+            Selection.activeGameObject = root.gameObject;
+            Debug.Log("Sort or Stay: Level 5 'The Final Vault' built and saved to " + SCENE + ". Press Play.");
+        }
+
+        /// The vault, its doors, the counter, the bars and the puzzle, built at the origin into the open scene.
+        /// Used by the standalone scene above and by the five-floor building (Kit.BuildingMode).
+        public static FloorParts BuildFloor()
+        {
             MakeMaterials();
 
             var root = new GameObject("Level5_FinalVault").transform;
@@ -75,11 +123,7 @@ namespace SortOrStayEditor
             BuildProps(root);
             BuildLights(root);
 
-            var player = BuildPlayer(SPAWN, 0f);
-
-            var sys = new GameObject("Systems").transform;
-            BuildUI(sys, "FLOOR 5  ·  THE FINAL VAULT", 5);
-
+            var sys = FloorSystems(root, 5);
             var puzzle = sys.gameObject.AddComponent<QuickPuzzle>();
             puzzle.items = bars;
             puzzle.slots = slots;
@@ -98,44 +142,21 @@ namespace SortOrStayEditor
             smaller.puzzle = puzzle;
             bigger.puzzle = puzzle;
 
-            var lm = sys.gameObject.AddComponent<LevelManager>();
-            lm.levelNumber = 5;
-            lm.nextScene = "";                 // the last floor: walking out shows the final scoreboard
-            lm.nextFloorLabel = "";
-            lm.door = door;
-            lm.player = player;
-
-            var overview = new GameObject("IntroCamera").transform;
-            overview.SetParent(sys, false);
-            overview.position = new Vector3(4.2f, 3.2f, -3.8f);
-            overview.rotation = Quaternion.LookRotation(new Vector3(0f, 1.5f, 2.6f) - overview.position);
-            var intro = sys.gameObject.AddComponent<LevelIntro>();
-            intro.player = player;
-            intro.puzzle = puzzle;
-            intro.overview = overview;
-            intro.objective = "<b>Quick sort</b> the gold bars, smallest first.\n" +
-                              "Raise the <b>pivot</b> (the last bar).  Every other bar:  <b>smaller</b> goes behind the gate,  <b>bigger</b> stays.  Then drop the pivot into its place.\n" +
-                              "<size=20>P pivot  ·  1 smaller  ·  2 bigger  ·  H hint</size>";
-            intro.lines = new[]
+            return new FloorParts
             {
-                "Floor 5.  The vault:  the last door between you and the street.",
-                "Eight gold bars, out of order.  The vault opens only for a sorted row.",
-                "Pick a pivot, split the rest around it, and do it again."
+                root = root, systems = sys, puzzle = puzzle, exitDoor = door, number = 5,
+                title = "FLOOR 5  ·  THE FINAL VAULT", roomName = "The Final Vault",
+                objective = "<b>Quick sort</b> the gold bars, smallest first.\n" +
+                            "Raise the <b>pivot</b> (the last bar).  Every other bar:  <b>smaller</b> goes behind the gate,  <b>bigger</b> stays.  Then drop the pivot into its place.\n" +
+                            "<size=20>P pivot  ·  1 smaller  ·  2 bigger  ·  H hint</size>",
+                lines = new[]
+                {
+                    "Floor 5.  The vault:  the last door between you and the street.",
+                    "Eight gold bars, out of order.  The vault opens only for a sorted row.",
+                    "Pick a pivot, split the rest around it, and do it again."
+                },
+                width = W, depth = D, height = H, spawn = SPAWN
             };
-
-            BuildStairwell(root, HD + T, H, DOOR_W, lm, "EXIT", mTread, mWall, mCeil, mTread, mExit);
-            BrightPostFx(sys, "Level5_PostFX", 0.18f);
-
-            BrightEnvironment(new Color(0.86f, 0.84f, 0.82f), new Color(0.72f, 0.66f, 0.58f), new Color(0.46f, 0.40f, 0.34f));
-            var sun = Sun(root, new Vector3(40f, -120f, 0f), new Color(1f, 0.93f, 0.80f), 1.2f);
-            RenderSettings.sun = sun;
-
-            EditorSceneManager.MarkSceneDirty(scene);
-            EditorSceneManager.SaveScene(scene, SCENE);
-            AddToBuildSettings(SCENE, 4);
-            AssetDatabase.SaveAssets();
-            Selection.activeGameObject = root.gameObject;
-            Debug.Log("Sort or Stay: Level 5 'The Final Vault' built and saved to " + SCENE + ". Press Play.");
         }
 
         // ============================================================ materials
@@ -181,7 +202,7 @@ namespace SortOrStayEditor
             WallAlongZ(room, "Wall_Left", -HW - T * 0.5f, -HD - T, HD + T, H, T, mWall);
             WallAlongZ(room, "Wall_Right", HW + T * 0.5f, -HD - T, HD + T, H, T, mWall);
             WallAlongX(room, "Wall_Back", -HD - T * 0.5f, -HW, HW, H, T, mWall);
-            WallAlongX(room, "Wall_Front", HD + T * 0.5f, -HW, HW, H, T, mWall, new Hole(0f, DOOR_W, SILL, DOOR_H));
+            WallAlongX(room, "Wall_Front", HD + T * 0.5f, -HW, HW, H, T, mWall, FrontHoles(new Hole(0f, DOOR_W, SILL, DOOR_H)));
 
             // dark marble skirting and a brass rail all round
             float sh = 0.7f;
@@ -190,17 +211,20 @@ namespace SortOrStayEditor
             Cube("Skirt_B", new Vector3(0f, sh * 0.5f, -HD + 0.01f), new Vector3(W, sh, 0.02f), mMarbleDark, room, false);
             float segW = (W - 3.4f) * 0.5f;
             Cube("Skirt_FL", new Vector3(-(1.7f + segW * 0.5f), sh * 0.5f, HD - 0.01f), new Vector3(segW, sh, 0.02f), mMarbleDark, room, false);
-            Cube("Skirt_FR", new Vector3(1.7f + segW * 0.5f, sh * 0.5f, HD - 0.01f), new Vector3(segW, sh, 0.02f), mMarbleDark, room, false);
+            FrontStrip(room, "Skirt_FR", 1.7f, 1.7f + segW, sh * 0.5f, sh, HD - 0.01f, 0.02f, mMarbleDark);
             Cube("Rail_L", new Vector3(-HW + 0.02f, sh, 0f), new Vector3(0.04f, 0.04f, D), mBrass, room, false);
             Cube("Rail_R", new Vector3(HW - 0.02f, sh, 0f), new Vector3(0.04f, 0.04f, D), mBrass, room, false);
             Cube("Rail_B", new Vector3(0f, sh, -HD + 0.02f), new Vector3(W, 0.04f, 0.04f), mBrass, room, false);
 
-            // the door we came in by (back wall), closed
-            var back = Group("EntranceDoor", room);
-            back.localPosition = new Vector3(0f, 0f, -HD);
-            Cube("Frame", new Vector3(0f, 1.2f, 0.03f), new Vector3(1.4f, 2.4f, 0.06f), mBrass, back, false);
-            Cube("Slab", new Vector3(0f, 1.15f, 0.065f), new Vector3(1.16f, 2.28f, 0.05f), mVaultSteel, back, false);
-            Cube("Bar", new Vector3(0f, 1.05f, 0.1f), new Vector3(0.9f, 0.06f, 0.05f), mBrass, back, false);
+            // the door we came in by (back wall), closed. In the building you come in from the stair tower instead.
+            if (!BuildingMode)
+            {
+                var back = Group("EntranceDoor", room);
+                back.localPosition = new Vector3(0f, 0f, -HD);
+                Cube("Frame", new Vector3(0f, 1.2f, 0.03f), new Vector3(1.4f, 2.4f, 0.06f), mBrass, back, false);
+                Cube("Slab", new Vector3(0f, 1.15f, 0.065f), new Vector3(1.16f, 2.28f, 0.05f), mVaultSteel, back, false);
+                Cube("Bar", new Vector3(0f, 1.05f, 0.1f), new Vector3(0.9f, 0.06f, 0.05f), mBrass, back, false);
+            }
 
             // a red carpet from the entrance to the counter
             Cube("CarpetBorder", new Vector3(0f, 0.003f, -2.3f), new Vector3(1.8f, 0.006f, 4.9f), mBrass, room, false);

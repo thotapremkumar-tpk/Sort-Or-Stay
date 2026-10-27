@@ -9,7 +9,7 @@ namespace SortOrStay
     /// click its neighbour to swap them (the left one is bigger) or click the same key again to let them stay.
     /// At the end of each pass the biggest unsorted key has bubbled to the right and is locked in place.
     [DefaultExecutionOrder(110)]           // LateUpdate after HandReach, so a carried key follows the final hand pose
-    public class BubblePuzzle : SortPuzzleBase
+    public class BubblePuzzle : SortPuzzleBase, IAutoPlayable
     {
         [Header("Deal")]
         public bool useFixedOrder = false;
@@ -55,13 +55,45 @@ namespace SortOrStay
                     ledMats[i].EnableKeyword("_EMISSION");
                 }
             }
-            // first person: stand the eye off the rack far enough that all six keys fit on screen
-            if (Player != null && slots.Length > 1)
-            {
-                Vector3 a = slots[0].position, b = slots[slots.Length - 1].position;
-                Player.SetViewStandOff((a + b) * 0.5f, slots[0].forward, b - a, Vector3.Distance(a, b) * 0.5f, firstPersonStandOff);
-            }
+            if (IsCurrent) ApplyViewStandOff();
             Setup();
+        }
+
+        /// First person: stand the eye off the rack far enough that all six keys fit on screen.
+        protected override void ApplyViewStandOff()
+        {
+            if (Player == null || slots.Length < 2) return;
+            Vector3 a = slots[0].position, b = slots[slots.Length - 1].position;
+            Player.SetViewStandOff((a + b) * 0.5f, slots[0].forward, b - a, Vector3.Distance(a, b) * 0.5f, firstPersonStandOff);
+        }
+
+        protected override void RefreshDisplays() => Refresh();
+
+        // ------------------------------------------------------------ auto-play (editor play-testing)
+
+        public bool AutoStep()
+        {
+            if (!AcceptsInput || IsSorted()) return false;
+            if (selected != items[cmp] && selected != items[cmp + 1]) { PutDown(); Select(items[cmp]); }
+            Decide(items[cmp].value > items[cmp + 1].value);
+            return true;
+        }
+
+        public Component AutoTarget(bool wrong)
+        {
+            if (Solved || IsSorted()) return null;
+            if (selected == null) return wrong ? null : items[cmp];                    // pick up a key of the pair
+            var other = selected == items[cmp] ? items[cmp + 1] : items[cmp];
+            bool swap = items[cmp].value > items[cmp + 1].value;
+            return swap != wrong ? other : selected;                                    // neighbour = swap, same key = stay
+        }
+
+        public string DebugState()
+        {
+            var sb = new System.Text.StringBuilder($"pass {pass + 1}  pair {cmp + 1}-{cmp + 2}  keys [");
+            for (int i = 0; i < N; i++) sb.Append(i > 0 ? " " : "").Append(items[i].value).Append(items[i] == selected ? "^" : "");
+            sb.Append($"]  swaps {swaps}  cmp {comparisons}  slips {mistakes}");
+            return sb.ToString();
         }
 
         public override void Setup()
@@ -483,7 +515,7 @@ namespace SortOrStay
             }
 
             if (GameUI.Instance != null)
-                GameUI.Instance.SetStats(Solved
+                SetHudStats(Solved
                     ? $"SWAPS  {swaps}      COMPARISONS  {comparisons}      HINTS  {hintsUsed}"
                     : $"PASS  {pass + 1}      COMPARING  {items[cmp].value} · {items[cmp + 1].value}      SWAPS  {swaps}      COMPARISONS  {comparisons}      HINTS  {hintsUsed}");
 

@@ -12,7 +12,9 @@ namespace SortOrStay
         public SortPuzzleBase puzzle;
         public bool playIntro = true;
 
-        [TextArea] public string objective =
+        [TextArea] public string objective = DefaultObjective;
+
+        public const string DefaultObjective =
             "Sort the 6 keys from <b>smallest to largest</b>, the bubble sort way.\n" +
             "Compare the <b>glowing pair</b>:  <b>swap</b> if the left key is bigger, otherwise they <b>stay</b>.\n" +
             "<size=20>Pick up a glowing key, then click its neighbour (swap) or the same key (stay)  ·  hook numbers 1-6  ·  H hint</size>";
@@ -26,6 +28,9 @@ namespace SortOrStay
 
         bool skip;
         bool finished;
+
+        /// Cut the intro short (same as pressing Space).
+        public void Skip() { if (!finished) skip = true; }
 
         void Update()
         {

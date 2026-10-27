@@ -10,7 +10,7 @@ namespace SortOrStay
     /// with the lightest crate so far, which stays marked. Then the player picks that lightest crate and the
     /// overhead crane swaps it into the next bay through a temporary spot behind the row (tmp = a; a = b; b = tmp).
     /// The scale keeps no memory between passes, exactly like selection sort: n(n-1)/2 comparisons, at most n-1 swaps.
-    public class SelectionPuzzle : SortPuzzleBase
+    public class SelectionPuzzle : SortPuzzleBase, IAutoPlayable
     {
         [Header("Deal")]
         public int[] weightPool = { 3, 4, 6, 7, 9, 11, 12, 14, 17, 19, 22, 25, 28, 31 };
@@ -484,6 +484,35 @@ namespace SortOrStay
             Refresh();
         }
 
+        protected override void RefreshDisplays() => Refresh();
+
+        // ------------------------------------------------------------ auto-play (editor play-testing)
+
+        public bool AutoStep()
+        {
+            if (!AcceptsInput || pass >= N) return false;
+            if (Scanning) StartCoroutine(ScanOne(scanAt, true, 0.3f));
+            else StartCoroutine(PlaceRoutine(minIdx));
+            return true;
+        }
+
+        public Component AutoTarget(bool wrong)
+        {
+            if (Solved || pass >= N) return null;
+            if (Scanning) return wrong ? null : items[scanAt];                      // weigh the next crate
+            if (!wrong) return items[minIdx];                                          // send the lightest
+            for (int i = pass; i < N; i++) if (i != minIdx) return items[i];           // a crate that is not the lightest
+            return null;
+        }
+
+        public string DebugState()
+        {
+            var sb = new System.Text.StringBuilder($"pass {pass + 1}  weigh {(Scanning ? (scanAt + 1).ToString() : "-")}  lightest {(minIdx >= 0 ? items[minIdx].value.ToString() : "-")}  bays [");
+            for (int i = 0; i < N; i++) sb.Append(i > 0 ? " " : "").Append(i < pass || weighed[i] ? items[i].value.ToString() : "?").Append(i < pass ? "*" : "");
+            sb.Append($"]  swaps {swaps}  weighings {weighings}  slips {mistakes}");
+            return sb.ToString();
+        }
+
         /// Crates already in their final bay are done: the pointer skips them.
         public override bool CanUse(SortItem item) => AcceptsInput && items.IndexOf(item) >= pass;
 
@@ -582,7 +611,7 @@ namespace SortOrStay
             for (int i = pass; i < n; i++) if (weighed[i]) weighedNow++;
 
             if (GameUI.Instance != null)
-                GameUI.Instance.SetStats($"WEIGHINGS  {weighings}      SWAPS  {swaps}      HINTS  {hintsUsed}");
+                SetHudStats($"WEIGHINGS  {weighings}      SWAPS  {swaps}      HINTS  {hintsUsed}");
 
             string status = Solved ? "<color=#1f9d47>DOORS OPEN</color>" : "<color=#d8432f>LOCKED</color>";
             if (board != null)

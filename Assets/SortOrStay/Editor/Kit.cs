@@ -34,6 +34,57 @@ namespace SortOrStayEditor
 
         public enum Anchor { Bottom, Top, Center }
 
+        // ============================================================ building mode
+
+        /// True while BuildBuilding stacks the floors into one scene: each floor builder then adds the entrance
+        /// doorway (front wall, right of the exit door) and leaves out its own stairwell, sun, player and HUD.
+        public static bool BuildingMode;
+
+        /// The entrance doorway from the stair tower, in every floor's front wall (floor-local x, width, height).
+        public const float EntranceX = 2.8f, EntranceW = 1.4f, EntranceH = 2.3f;
+
+        /// What a floor builder hands back: the room (built at the origin) and what the building needs to run it.
+        public class FloorParts
+        {
+            public Transform root;            // everything of the floor is under this
+            public Transform systems;         // holds the puzzle
+            public SortPuzzleBase puzzle;
+            public Door exitDoor;
+            public int number;
+            public string title, roomName, objective;
+            public string[] lines;
+            public float width, depth, height;     // inner room size
+            public Vector3 spawn;                  // standalone spawn (floor-local)
+        }
+
+        /// The front wall's openings: the exit door, plus the entrance from the stair tower in building mode.
+        public static Hole[] FrontHoles(Hole exit)
+        {
+            return BuildingMode ? new[] { exit, new Hole(EntranceX, EntranceW, 0f, EntranceH) } : new[] { exit };
+        }
+
+        /// A strip along the inside of the front wall (band, skirting) from x0 to x1, left open across the
+        /// entrance doorway in building mode.
+        public static void FrontStrip(Transform p, string name, float x0, float x1, float yc, float h, float z, float thick, Material m)
+        {
+            float e0 = EntranceX - EntranceW * 0.5f, e1 = EntranceX + EntranceW * 0.5f;
+            if (!BuildingMode || x1 <= e0 || x0 >= e1)
+            {
+                Cube(name, new Vector3((x0 + x1) * 0.5f, yc, z), new Vector3(x1 - x0, h, thick), m, p, false);
+                return;
+            }
+            if (e0 > x0) Cube(name + "_A", new Vector3((x0 + e0) * 0.5f, yc, z), new Vector3(e0 - x0, h, thick), m, p, false);
+            if (x1 > e1) Cube(name + "_B", new Vector3((e1 + x1) * 0.5f, yc, z), new Vector3(x1 - e1, h, thick), m, p, false);
+        }
+
+        /// The GameObject that holds a floor's puzzle: a scene root on its own, a child of the floor in the building.
+        public static Transform FloorSystems(Transform root, int floor)
+        {
+            var go = new GameObject(BuildingMode ? "Floor" + floor + "_Systems" : "Systems");
+            if (BuildingMode) go.transform.SetParent(root, false);
+            return go.transform;
+        }
+
         public struct Hole
         {
             public float center, width, bottom, top;

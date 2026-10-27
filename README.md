@@ -6,7 +6,20 @@ GDIT game project · Group 3 · IIIT Sri City · built with Unity 6
 
 ![Floor 1 – the Locked Room](Docs/screenshots/floor1-locked-room.jpg)
 
-You wake up locked in a five-floor building. Every floor is a room whose exit opens only when its objects are in order, and the room's rule *is* the algorithm: on Floor 1 only neighbouring keys may swap (bubble sort), on Floor 2 crate weights stay hidden until you weigh them (selection sort), on Floor 3 the books on the shelf are sorted in place, each one walked left past bigger books (insertion sort), on Floor 4 the data blocks are split apart and merged back two runs at a time (merge sort), and on Floor 5 the gold bars are split around a pivot behind a laser gate (quick sort). Every move is checked; a wrong move gets a reason, and after each floor a debrief compares your moves with the fewest possible.
+You wake up locked on the top floor of a five-floor building and have to sort your way down to the street. Every floor is a room whose exit opens only when its objects are in order, and the room's rule *is* the algorithm: on Floor 1 only neighbouring keys may swap (bubble sort), on Floor 2 crate weights stay hidden until you weigh them (selection sort), on Floor 3 the books on the shelf are sorted in place, each one walked left past bigger books (insertion sort), on Floor 4 the data blocks are split apart and merged back two runs at a time (merge sort), and on Floor 5 the gold bars are split around a pivot behind a laser gate (quick sort). Every move is checked; a wrong move gets a reason, and after each floor a debrief compares your moves with the fewest possible.
+
+## The building
+
+The whole game is one continuous scene, `Scenes/Building.unity`: five rooms stacked on top of each other with a stair tower on the front. There are no loading screens or black fades between floors.
+
+1. Sort the room. The exit door unlocks and swings open onto the stair landing.
+2. Walk down: a flight of stairs to the half-landing (window, sign to the next floor), then a second flight back to the next floor's doorway.
+3. Walk in. The doorway slides shut behind you, the HUD switches to the new floor (title, objective, counters, number keys) and that floor's clock starts.
+4. On the ground floor the vault door opens into a corridor under the stairs. Walk out through the street door to finish: the scoreboard of all five floors appears.
+
+A wall between the two flights keeps every floor's exit landing separate from the stairs coming down, so the only way down is through every room. Floor 1 (the Locked Room) is the top storey and Floor 5 (the Final Vault) the ground floor.
+
+![Stairs between Floor 1 and Floor 2](Docs/screenshots/building-stairs.jpg)
 
 ## Floors
 
@@ -37,7 +50,8 @@ You wake up locked in a five-floor building. Every floor is a room whose exit op
 1. Install **Unity 6000.6.2f1** (Unity 6.6) with Unity Hub.
 2. Clone this repo and add the folder in Unity Hub (*Add → Add project from disk*).
 3. The first open re-imports all assets and rebuilds `Library/` (a few minutes).
-4. Open `Assets/SortOrStay/Scenes/Level1_Bubble.unity` and press **Play**. Floors 2–5 load from the door/stairwell or from the pause menu; after Floor 5 the end card shows the scoreboard of every floor.
+4. Open `Assets/SortOrStay/Scenes/Building.unity` and press **Play**: you wake up on the top floor. The pause menu (Esc) restarts the floor you are on or starts the building on another floor; after the street door the end card shows the scoreboard of every floor.
+5. Each floor also has its own scene (`Level1_Bubble` … `Level5_Quick`) for working on one room; those still link floor to floor by loading the next scene.
 
 Render pipeline: URP (Forward+), linear colour space, new Input System.
 
@@ -58,14 +72,16 @@ Render pipeline: URP (Forward+), linear colour space, new Input System.
 | V | First / third person |
 | C | Switch character (Alex / Maya) |
 | Tab | Switch to mouse-look (crosshair) controls |
-| Esc | Pause menu (restart, jump to a floor, camera, controls) |
+| Esc | Pause menu (restart this floor, start on another floor, camera, controls) |
 | K | *Editor only:* save a Game-view screenshot to `Screenshots/` |
 
 ## Editor tools
 
 Menu **Sort or Stay** in the Unity editor:
 
-- **Build Level 1 / 2 / 3 / 4 / 5**, **Build Levels 4 + 5** — rebuilds each floor's scene from code (`Assets/SortOrStay/Editor/BuildLevel*.cs`, shared parts in `Kit.cs`).
+- **Build Building (all 5 floors)** — builds `Building.unity`: the five floor rooms stacked into one building, the stair tower, the exit corridor and the street (`BuildBuilding.cs`). Runtime: `BuildingManager.cs` (which floor is current, HUD, lights, restart) and `EntranceDoor.cs`.
+- **Build Level 1 / 2 / 3 / 4 / 5**, **Build Levels 4 + 5** — rebuilds each floor's own scene from code (`Assets/SortOrStay/Editor/BuildLevel*.cs`, shared parts in `Kit.cs`). The building uses the same room builders, so a change to a room shows up in both after a rebuild.
+- **Dev: Auto-play the building (top to street)** / **… from Floor 4** / **Dev: Hands-on test the building** — play the whole building: every floor is solved, then the avatar walks out of the door, down both flights and into the next floor, and finally out to the street.
 - **Dev: Auto-play Floors 4 and 5** / **Dev: Hands-on test Floors 4 and 5** — editor-only play-testers. Auto-play takes the next correct step every half second; the hands-on test walks the avatar over and clicks like a player, with deliberate wrong moves and hints. Both log every step and the debrief to `Logs/SortOrStay_autoplay.txt` and save screenshots to `Screenshots/`. In the editor, Ctrl+N also performs the next correct step on any floor.
 - **Setup Player Characters** — re-applies the Rocketbox import settings and rebuilds the avatar materials and Animator controllers.
 - **Build Basic Demo (Level 1 Bubble Sort)** — a minimal fixed-camera bubble-sort room.
@@ -76,9 +92,9 @@ Menu **Sort or Stay** in the Unity editor:
 ```
 Assets/
   SortOrStay/
-    Scripts/      gameplay: puzzles (Bubble/Selection/Insertion/Merge/QuickPuzzle), player, interactor, HUD, doors, level manager
+    Scripts/      gameplay: puzzles (Bubble/Selection/Insertion/Merge/QuickPuzzle), player, interactor, HUD, doors, building and level managers
     Editor/       scene builders and import tools
-    Scenes/       Level1_Bubble, Level2_Selection, Level3_Insertion, Level4_Merge, Level5_Quick
+    Scenes/       Building (the whole game), Level1_Bubble, Level2_Selection, Level3_Insertion, Level4_Merge, Level5_Quick
     BasicDemo/    stand-alone basic bubble-sort demo
     Materials/ Player/ Settings/
   ThirdParty/

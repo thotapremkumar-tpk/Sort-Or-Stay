@@ -79,7 +79,7 @@ namespace SortOrStay
             if (pointer && click && hitSomething && hit.normal.y > 0.6f && controller.canMove)
             {
                 pendingTarget = null;
-                controller.WalkTo(hit.point, 0.15f, null);
+                controller.WalkToSpot(hit.point);
             }
         }
 

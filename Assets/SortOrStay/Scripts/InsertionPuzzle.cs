@@ -10,7 +10,7 @@ namespace SortOrStay
     /// insertion-sorts them in place. The next book is pulled out; the player compares it with its left neighbour
     /// and calls SHIFT (the neighbour is bigger: it slides one place right into the gap) or PLACE (drop the book
     /// into the gap). The part of the shelf left of the next book is always sorted.
-    public class InsertionPuzzle : SortPuzzleBase
+    public class InsertionPuzzle : SortPuzzleBase, IAutoPlayable
     {
         [Header("Deal")]
         public int[] callNumberPool = { 4, 133, 152, 220, 299, 330, 398, 420, 512, 595, 641, 709, 782, 822, 909, 973 };
@@ -51,13 +51,45 @@ namespace SortOrStay
 
         void Start()
         {
-            // first person: stand the eye off the shelf far enough that all eight books fit on screen
-            if (Player != null && shelfSlots.Length > 1)
-            {
-                Vector3 a = shelfSlots[0].position, b = shelfSlots[shelfSlots.Length - 1].position;
-                Player.SetViewStandOff((a + b) * 0.5f, -shelfSlots[0].forward, b - a, Vector3.Distance(a, b) * 0.5f, firstPersonStandOff);
-            }
+            if (IsCurrent) ApplyViewStandOff();
             Setup();
+        }
+
+        /// First person: stand the eye off the shelf far enough that all eight books fit on screen.
+        protected override void ApplyViewStandOff()
+        {
+            if (Player == null || shelfSlots.Length < 2) return;
+            Vector3 a = shelfSlots[0].position, b = shelfSlots[shelfSlots.Length - 1].position;
+            Player.SetViewStandOff((a + b) * 0.5f, -shelfSlots[0].forward, b - a, Vector3.Distance(a, b) * 0.5f, firstPersonStandOff);
+        }
+
+        protected override void RefreshDisplays() => Refresh();
+
+        // ------------------------------------------------------------ auto-play (editor play-testing)
+
+        public bool AutoStep()
+        {
+            if (!AcceptsInput || keyIdx >= N) return false;
+            if (key == null) StartCoroutine(PullOut());
+            else Decide(gap > 0 && shelf[gap - 1].value > key.value);
+            return true;
+        }
+
+        public Component AutoTarget(bool wrong)
+        {
+            if (Solved || keyIdx >= N) return null;
+            if (key == null) return wrong ? null : shelf[keyIdx];                    // pull out the next book
+            bool shift = gap > 0 && shelf[gap - 1].value > key.value;
+            if (!wrong) return shift ? shelf[gap - 1] : key;                          // SHIFT the neighbour or PLACE the book
+            return shift ? key : (gap > 0 ? shelf[gap - 1] : null);
+        }
+
+        public string DebugState()
+        {
+            var sb = new System.Text.StringBuilder($"next {keyIdx + 1}  key {(key != null ? Fmt(key.value) : "-")}  gap {(gap >= 0 ? (gap + 1).ToString() : "-")}  shelf [");
+            for (int i = 0; i < N; i++) sb.Append(i > 0 ? " " : "").Append(shelf[i] != null ? Fmt(shelf[i].value) : "___");
+            sb.Append($"]  shifts {shifts}  cmp {comparisons}  slips {mistakes}");
+            return sb.ToString();
         }
 
         public override void Setup()
@@ -418,7 +450,7 @@ namespace SortOrStay
             }
 
             if (GameUI.Instance != null)
-                GameUI.Instance.SetStats($"SHIFTS  {shifts}      COMPARISONS  {comparisons}      HINTS  {hintsUsed}");
+                SetHudStats($"SHIFTS  {shifts}      COMPARISONS  {comparisons}      HINTS  {hintsUsed}");
 
             string step = Solved || keyIdx >= n ? "ALL SORTED"
                 : key != null ? $"KEY  {Fmt(key.value)}" + (gap > 0 ? $"  vs  {Fmt(shelf[gap - 1].value)}" : "")

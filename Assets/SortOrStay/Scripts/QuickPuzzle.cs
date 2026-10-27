@@ -72,13 +72,19 @@ namespace SortOrStay
                 var r = rangeStrip.GetComponent<Renderer>();
                 if (r != null) { stripMat = r.material; stripMat.EnableKeyword("_EMISSION"); }
             }
-            if (Player != null && slots.Length > 1)
-            {
-                Vector3 a = slots[0].position, b = slots[slots.Length - 1].position;
-                Player.SetViewStandOff((a + b) * 0.5f, -slots[0].forward, b - a, Vector3.Distance(a, b) * 0.5f, firstPersonStandOff);
-            }
+            if (IsCurrent) ApplyViewStandOff();
             Setup();
         }
+
+        /// First person: stand the eye off the counter far enough that every bar fits on screen.
+        protected override void ApplyViewStandOff()
+        {
+            if (Player == null || slots.Length < 2) return;
+            Vector3 a = slots[0].position, b = slots[slots.Length - 1].position;
+            Player.SetViewStandOff((a + b) * 0.5f, -slots[0].forward, b - a, Vector3.Distance(a, b) * 0.5f, firstPersonStandOff);
+        }
+
+        protected override void RefreshDisplays() => Refresh();
 
         public override void Setup()
         {
@@ -631,7 +637,7 @@ namespace SortOrStay
             }
 
             if (GameUI.Instance != null)
-                GameUI.Instance.SetStats($"COMPARISONS  {comparisons}      SWAPS  {swaps}      HINTS  {hintsUsed}");
+                SetHudStats($"COMPARISONS  {comparisons}      SWAPS  {swaps}      HINTS  {hintsUsed}");
 
             string step = Solved || phase == Phase.Done ? "ALL BARS IN ORDER"
                 : phase == Phase.Pivot && hi <= lo ? $"SLOT {lo + 1}   ·   ONE BAR ON ITS OWN:  ALREADY IN PLACE"

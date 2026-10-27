@@ -43,37 +43,16 @@ namespace SortOrStayEditor
             Begin();
             EnsureCharacters();
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
-            MakeMaterials();
 
-            var root = new GameObject("Level3_Library").transform;
-            BuildRoom(root);
-            var door = DoubleDoor(root, HD, T, DOOR_W, DOOR_H, mBrass, mWoodDark, mLamp, mGlass, true);
-            door.lockedMessage = "Locked.  A brass plate reads:  EVERY BOOK IN ITS PLACE.";
-
-            BuildTable(root);
-            BuildReturnShelf(root, out Transform[] shelfSlots, out TMP_Text board);
-            var books = BuildBooks(root, shelfSlots);              // the books start on the shelf, out of order
-            var gaps = BuildGaps(root, shelfSlots);
-            var terminal = BuildKiosk(root);
-            BuildWallBookcases(root);
-            BuildProps(root);
-            BuildLights(root);
+            var parts = BuildFloor();
+            var root = parts.root;
+            var door = parts.exitDoor;
+            var puzzle = parts.puzzle;
 
             var player = BuildPlayer(SPAWN, 90f);
 
-            var sys = new GameObject("Systems").transform;
-            BuildUI(sys, "FLOOR 3  ·  THE LIBRARY", 3);
-
-            var puzzle = sys.gameObject.AddComponent<InsertionPuzzle>();
-            puzzle.items = books;
-            puzzle.slots = shelfSlots;
-            puzzle.shelfSlots = shelfSlots;
-            puzzle.gaps = gaps;
-            puzzle.board = board;
-            puzzle.terminal = terminal;
-            puzzle.door = door;
-            terminal.puzzle = puzzle;
-            foreach (var g in gaps) g.puzzle = puzzle;
+            var sys = parts.systems;
+            BuildUI(sys, parts.title, 3);
 
             var lm = sys.gameObject.AddComponent<LevelManager>();
             lm.levelNumber = 3;
@@ -90,15 +69,8 @@ namespace SortOrStayEditor
             intro.player = player;
             intro.puzzle = puzzle;
             intro.overview = overview;
-            intro.objective = "<b>Insertion sort</b> the books on the shelf, smallest number first.\n" +
-                              "Pull out the glowing book;  <b>shift</b> a bigger left neighbour right (click it),  or <b>place</b> the book (click it).\n" +
-                              "<size=20>Click the glowing book or press F  ·  click the glowing spot or press its number  ·  H hint</size>";
-            intro.lines = new[]
-            {
-                "Floor 3.  A library, warm and quiet.",
-                "Eight books on the return shelf, all out of order.",
-                "Sort them where they stand, one book at a time."
-            };
+            intro.objective = parts.objective;
+            intro.lines = parts.lines;
 
             BuildStairwell(root, HD + T, H, DOOR_W, lm, "FLOOR 4", mFloor, mWall, mCeil, mWoodDark, mExit);
             BrightPostFx(sys, "Level3_PostFX", 0.2f);
@@ -113,6 +85,55 @@ namespace SortOrStayEditor
             AssetDatabase.SaveAssets();
             Selection.activeGameObject = root.gameObject;
             Debug.Log("Sort or Stay: Level 3 'The Library' built and saved to " + SCENE + ". Press Play.");
+        }
+
+        /// The room, its doors, the books and the puzzle, built at the origin into the open scene.
+        /// Used by the standalone scene above and by the five-floor building (Kit.BuildingMode).
+        public static FloorParts BuildFloor()
+        {
+            MakeMaterials();
+
+            var root = new GameObject("Level3_Library").transform;
+            BuildRoom(root);
+            var door = DoubleDoor(root, HD, T, DOOR_W, DOOR_H, mBrass, mWoodDark, mLamp, mGlass, true);
+            door.lockedMessage = "Locked.  A brass plate reads:  EVERY BOOK IN ITS PLACE.";
+
+            BuildTable(root);
+            BuildReturnShelf(root, out Transform[] shelfSlots, out TMP_Text board);
+            var books = BuildBooks(root, shelfSlots);              // the books start on the shelf, out of order
+            var gaps = BuildGaps(root, shelfSlots);
+            var terminal = BuildKiosk(root);
+            BuildWallBookcases(root);
+            BuildProps(root);
+            BuildLights(root);
+
+            var sys = FloorSystems(root, 3);
+            var puzzle = sys.gameObject.AddComponent<InsertionPuzzle>();
+            puzzle.items = books;
+            puzzle.slots = shelfSlots;
+            puzzle.shelfSlots = shelfSlots;
+            puzzle.gaps = gaps;
+            puzzle.board = board;
+            puzzle.terminal = terminal;
+            puzzle.door = door;
+            terminal.puzzle = puzzle;
+            foreach (var g in gaps) g.puzzle = puzzle;
+
+            return new FloorParts
+            {
+                root = root, systems = sys, puzzle = puzzle, exitDoor = door, number = 3,
+                title = "FLOOR 3  ·  THE LIBRARY", roomName = "The Library",
+                objective = "<b>Insertion sort</b> the books on the shelf, smallest number first.\n" +
+                            "Pull out the glowing book;  <b>shift</b> a bigger left neighbour right (click it),  or <b>place</b> the book (click it).\n" +
+                            "<size=20>Click the glowing book or press F  ·  click the glowing spot or press its number  ·  H hint</size>",
+                lines = new[]
+                {
+                    "Floor 3.  A library, warm and quiet.",
+                    "Eight books on the return shelf, all out of order.",
+                    "Sort them where they stand, one book at a time."
+                },
+                width = W, depth = D, height = H, spawn = SPAWN
+            };
         }
 
         // ============================================================ materials
@@ -172,7 +193,7 @@ namespace SortOrStayEditor
                 WindowZ(room, "Window_" + i, HW + T * 0.5f, wz[i], 1.5f, 0.85f, 3.1f, T, mFrame, mGlass, mWood);
             WallAlongZ(room, "Wall_Left", -HW - T * 0.5f, -HD - T, HD + T, H, T, mWall);
             WallAlongX(room, "Wall_Back", -HD - T * 0.5f, -HW, HW, H, T, mWall);
-            WallAlongX(room, "Wall_Front", HD + T * 0.5f, -HW, HW, H, T, mWall, new Hole(0f, DOOR_W, 0f, DOOR_H));
+            WallAlongX(room, "Wall_Front", HD + T * 0.5f, -HW, HW, H, T, mWall, FrontHoles(new Hole(0f, DOOR_W, 0f, DOOR_H)));
 
             // wood wainscot on the walls that are not covered by bookcases
             float wh = 0.95f;
@@ -183,19 +204,22 @@ namespace SortOrStayEditor
             }
             Cube("Rail_R", new Vector3(HW - 0.02f, wh, 0f), new Vector3(0.04f, 0.04f, D), mWoodDark, room, false);
 
-            // entrance (left wall), closed behind us
-            var ent = Group("EntranceDoor", room);
-            ent.localPosition = new Vector3(-HW, 0f, 0f);
-            ent.localRotation = Quaternion.Euler(0f, 90f, 0f);      // local +Z points into the room (+X)
-            Cube("Frame", new Vector3(0f, 1.2f, 0.03f), new Vector3(1.3f, 2.4f, 0.06f), mWoodDark, ent, false);
-            Cube("Slab", new Vector3(0f, 1.15f, 0.07f), new Vector3(1.1f, 2.28f, 0.04f), mWood, ent, false);
-            Cube("Panel_Top", new Vector3(0f, 1.62f, 0.095f), new Vector3(0.8f, 0.8f, 0.01f), mWoodDark, ent, false);
-            Cube("Panel_Bottom", new Vector3(0f, 0.6f, 0.095f), new Vector3(0.8f, 0.7f, 0.01f), mWoodDark, ent, false);
-            Sphere("Knob", new Vector3(0.42f, 1.05f, 0.11f), 0.07f, mBrass, ent);
+            // entrance (left wall), closed behind us. In the building you come in from the stair tower instead.
+            if (!BuildingMode)
+            {
+                var ent = Group("EntranceDoor", room);
+                ent.localPosition = new Vector3(-HW, 0f, 0f);
+                ent.localRotation = Quaternion.Euler(0f, 90f, 0f);      // local +Z points into the room (+X)
+                Cube("Frame", new Vector3(0f, 1.2f, 0.03f), new Vector3(1.3f, 2.4f, 0.06f), mWoodDark, ent, false);
+                Cube("Slab", new Vector3(0f, 1.15f, 0.07f), new Vector3(1.1f, 2.28f, 0.04f), mWood, ent, false);
+                Cube("Panel_Top", new Vector3(0f, 1.62f, 0.095f), new Vector3(0.8f, 0.8f, 0.01f), mWoodDark, ent, false);
+                Cube("Panel_Bottom", new Vector3(0f, 0.6f, 0.095f), new Vector3(0.8f, 0.7f, 0.01f), mWoodDark, ent, false);
+                Sphere("Knob", new Vector3(0.42f, 1.05f, 0.11f), 0.07f, mBrass, ent);
+            }
 
             // "quiet please" plaque
             var q = Group("QuietSign", room);
-            q.localPosition = new Vector3(-HW + 0.01f, 2.75f, 0f);
+            q.localPosition = new Vector3(-HW + 0.01f, BuildingMode ? 3.2f : 2.75f, 0f);   // above the extra bookcase in the building
             q.localRotation = Quaternion.Euler(0f, -90f, 0f);
             Cube("Plate", new Vector3(0f, 0f, -0.01f), new Vector3(1.1f, 0.24f, 0.02f), mBrass, q, false);
             Text("Text", q, new Vector3(0f, 0f, -0.022f), new Vector2(1.0f, 0.16f), "QUIET PLEASE", new Color(0.22f, 0.15f, 0.08f), TextAlignmentOptions.Center, true);
@@ -405,12 +429,14 @@ namespace SortOrStayEditor
             var rng = new System.Random(1234);
             // back wall
             for (int i = 0; i < 4; i++) Bookcase(g, "Back_" + i, new Vector3(-3.45f + i * 2.3f, 0f, -HD + 0.22f), 0f, 2.2f, rng);
-            // front wall, either side of the doors
+            // front wall, either side of the doors (in the building the right one makes room for the entrance)
             Bookcase(g, "Front_L", new Vector3(-3.0f, 0f, HD - 0.22f), 180f, 3.2f, rng);
-            Bookcase(g, "Front_R", new Vector3(3.0f, 0f, HD - 0.22f), 180f, 3.2f, rng);
-            // left wall, either side of the entrance
+            if (BuildingMode) Bookcase(g, "Front_R", new Vector3(4.25f, 0f, HD - 0.22f), 180f, 1.3f, rng);
+            else Bookcase(g, "Front_R", new Vector3(3.0f, 0f, HD - 0.22f), 180f, 3.2f, rng);
+            // left wall, either side of the entrance (in the building there is no door there: one more bookcase)
             Bookcase(g, "Left_A", new Vector3(-HW + 0.22f, 0f, -2.5f), 90f, 2.8f, rng);
             Bookcase(g, "Left_B", new Vector3(-HW + 0.22f, 0f, 2.5f), 90f, 2.8f, rng);
+            if (BuildingMode) Bookcase(g, "Left_Mid", new Vector3(-HW + 0.22f, 0f, 0f), 90f, 2.1f, rng);
         }
 
         /// A tall bookcase whose front faces local -Z after 'yaw' (yaw 0 = faces +Z... see below).

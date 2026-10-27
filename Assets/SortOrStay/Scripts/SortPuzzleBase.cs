@@ -17,6 +17,29 @@ namespace SortOrStay
         public bool Solved { get; protected set; }
         public virtual bool AcceptsInput => inputEnabled && !Solved && !busy;
 
+        /// In the five-floor building only the floor the player is on drives the HUD and the first-person view.
+        public bool IsCurrent => BuildingManager.Instance == null || BuildingManager.Instance.CurrentPuzzle == this;
+
+        /// The move counter, top right of the HUD (only for the floor the player is on).
+        protected void SetHudStats(string s)
+        {
+            if (IsCurrent && GameUI.Instance != null) GameUI.Instance.SetStats(s);
+        }
+
+        /// First person: keep the eye far enough from this floor's display that all of it fits on screen.
+        protected virtual void ApplyViewStandOff() { }
+
+        /// Redraw boards, terminal and HUD counter.
+        protected virtual void RefreshDisplays() { }
+
+        /// The player has just walked onto this floor (building) or the floor's scene has started.
+        public void OnBecameCurrent()
+        {
+            startTime = Time.time;              // the floor's clock starts when the player walks in
+            ApplyViewStandOff();
+            RefreshDisplays();
+        }
+
         protected bool busy;                 // true while an animation runs
         protected float startTime;
 
