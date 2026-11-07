@@ -56,7 +56,7 @@ namespace SortOrStayEditor
 
             string stem = Path.GetFileNameWithoutExtension(assetPath).Replace(".max", "");
             bool locomotion = stem.Contains("_walk_") || stem.Contains("_run_");
-            bool loop = locomotion || stem.Contains("idle_neutral");
+            bool loop = locomotion || stem.Contains("idle_neutral") || stem.Contains("gestic_talk");   // the guide talks in a loop
 
             var c = clips[0];
             c.name = stem;
