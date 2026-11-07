@@ -43,6 +43,9 @@ namespace SortOrStayEditor
         /// The entrance doorway from the stair tower, in every floor's front wall (floor-local x, width, height).
         public const float EntranceX = 2.8f, EntranceW = 1.4f, EntranceH = 2.3f;
 
+        /// True while BuildBuilding builds a room that has another room right of it: no windows in the right wall.
+        public static bool NoSideWindows;
+
         /// What a floor builder hands back: the room (built at the origin) and what the building needs to run it.
         public class FloorParts
         {
@@ -55,6 +58,8 @@ namespace SortOrStayEditor
             public string[] lines;
             public float width, depth, height;     // inner room size
             public Vector3 spawn;                  // standalone spawn (floor-local)
+            public float entranceX = EntranceX, entranceW = EntranceW;   // the room's doorway from the hallway (building)
+            public float entranceSlide = 1f;       // +1: the entrance panel slides towards +x into the wall, -1: towards -x
         }
 
         /// The front wall's openings: the exit door, plus the entrance from the stair tower in building mode.
@@ -867,6 +872,203 @@ namespace SortOrStayEditor
             foreach (var r in g.GetComponentsInChildren<Renderer>()) r.shadowCastingMode = ShadowCastingMode.Off;
             SetLayer(g.gameObject, 2);
             g.gameObject.SetActive(false);
+            return g;
+        }
+
+        // ============================================================ the guide (Professor Ada)
+
+        public const string GUIDE_CHAR = "Business_Female_02";
+        const string GUIDE_CODE = "f015";
+        const string GUIDE_CTRL = PLAYER_DIR + "Guide_Ada.controller";
+        static readonly string[] GuideGestureClips = { "f_wave_01", "f_gestic_presentation_right_01", "f_claphands_01", "f_gestic_listen_deny_01", "f_gestic_thoughtful_01" };
+        static readonly string[] GuideGestures = { "Wave", "Present", "Clap", "Deny", "Think" };
+        const string GUIDE_TALK = "f_gestic_talk_neutral_01";
+
+        static string GuideFbx => RB + "Characters/" + GUIDE_CHAR + "/" + GUIDE_CHAR + ".fbx";
+
+        /// Import settings, materials and the Animator controller for the guide. False if her files are missing.
+        public static bool EnsureGuide(bool force = false)
+        {
+            if (AssetDatabase.LoadAssetAtPath<GameObject>(GuideFbx) == null)
+            {
+                Debug.LogWarning("Sort or Stay: the guide's character is missing from " + GuideFbx + ". She falls back to a capsule.");
+                return false;
+            }
+            var paths = new List<string> { GuideFbx, AnimFbx(GUIDE_TALK) };
+            foreach (var c in GuideGestureClips) paths.Add(AnimFbx(c));
+            foreach (var st in new[] { "f_idle_neutral_01", "f_walk_neutral_01", "f_run_neutral_01" }) paths.Add(AnimFbx(st));
+            foreach (var path in paths)
+            {
+                var mi = AssetImporter.GetAtPath(path) as ModelImporter;
+                if (mi == null) { Debug.LogWarning("Sort or Stay: missing " + path); continue; }
+                bool isAnim = path.Contains("/Animations/");
+                bool configured = mi.animationType == ModelImporterAnimationType.Generic && mi.motionNodeName == "Bip01"
+                                  && (!isAnim || (mi.clipAnimations.Length == 1 && mi.clipAnimations[0].name != "Take 001"
+                                                  && (!path.Contains("gestic_talk") || mi.clipAnimations[0].loopTime)));
+                if (force || !configured) AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+            }
+            GuideMaterials();
+            if (force) AssetDatabase.DeleteAsset(GUIDE_CTRL);
+            if (AssetDatabase.LoadAssetAtPath<AnimatorController>(GUIDE_CTRL) == null) BuildGuideController();
+            AssetDatabase.SaveAssets();
+            return true;
+        }
+
+        static Material[] GuideMaterials()
+        {
+            string tex = RB + "Characters/" + GUIDE_CHAR + "/Textures/" + GUIDE_CODE;
+            string pre = PLAYER_DIR + "Materials/" + GUIDE_CHAR;
+            var body = CharMat(pre + "_Body.mat", tex + "_body_color.jpg", tex + "_body_normal.png", false, 0.30f);
+            var head = CharMat(pre + "_Head.mat", tex + "_head_color.jpg", tex + "_head_normal.png", false, 0.38f);
+            var hair = CharMat(pre + "_Hair.mat", tex + "_opacity_color.png", null, true, 0.25f);
+            var glasses = CharMat(pre + "_Glasses.mat", tex + "_glasses_opacity_color.png", tex + "_glasses_normal.png", true, 0.8f);
+            glasses.SetFloat("_Cutoff", 0.3f);
+            EditorUtility.SetDirty(glasses);
+            return new[] { body, head, hair, glasses };
+        }
+
+        static void BuildGuideController()
+        {
+            var ctrl = AnimatorController.CreateAnimatorControllerAtPath(GUIDE_CTRL);
+            ctrl.AddParameter("Speed", AnimatorControllerParameterType.Float);
+            ctrl.AddParameter("Talking", AnimatorControllerParameterType.Bool);
+            foreach (var g in GuideGestures) ctrl.AddParameter(g, AnimatorControllerParameterType.Trigger);
+
+            var sm = ctrl.layers[0].stateMachine;
+            var loco = ctrl.CreateBlendTreeInController("Locomotion", out BlendTree tree, 0);
+            tree.blendType = BlendTreeType.Simple1D;
+            tree.blendParameter = "Speed";
+            tree.useAutomaticThresholds = false;
+            tree.AddChild(Clip("f_idle_neutral_01"), 0f);
+            tree.AddChild(Clip("f_walk_neutral_01"), 1.35f);
+            tree.AddChild(Clip("f_run_neutral_01"), 3.0f);
+            var ch = tree.children;
+            ch[1].timeScale = 1.35f;
+            ch[2].timeScale = 1.04f;
+            tree.children = ch;
+            EditorUtility.SetDirty(tree);
+            sm.defaultState = loco;
+
+            // talking: gestures while she speaks and stands still
+            var talk = sm.AddState("Talk", new Vector3(300f, -120f, 0f));
+            talk.motion = Clip(GUIDE_TALK);
+            var toTalk = loco.AddTransition(talk);
+            toTalk.AddCondition(AnimatorConditionMode.If, 0f, "Talking");
+            toTalk.AddCondition(AnimatorConditionMode.Less, 0.2f, "Speed");
+            toTalk.hasExitTime = false;
+            toTalk.duration = 0.3f;
+            var fromTalk = talk.AddTransition(loco);
+            fromTalk.AddCondition(AnimatorConditionMode.IfNot, 0f, "Talking");
+            fromTalk.hasExitTime = false;
+            fromTalk.duration = 0.35f;
+            var walkOff = talk.AddTransition(loco);
+            walkOff.AddCondition(AnimatorConditionMode.Greater, 0.3f, "Speed");
+            walkOff.hasExitTime = false;
+            walkOff.duration = 0.25f;
+
+            for (int i = 0; i < GuideGestures.Length; i++)
+            {
+                var st = sm.AddState(GuideGestures[i], new Vector3(560f, 110f * i, 0f));
+                st.motion = Clip(GuideGestureClips[i]);
+                var t = sm.AddAnyStateTransition(st);
+                t.AddCondition(AnimatorConditionMode.If, 0f, GuideGestures[i]);
+                t.hasExitTime = false;
+                t.duration = 0.25f;
+                t.canTransitionToSelf = false;
+                var back = st.AddTransition(loco);
+                back.hasExitTime = true;
+                back.exitTime = 0.88f;
+                back.duration = 0.3f;
+                var interrupt = st.AddTransition(loco);
+                interrupt.AddCondition(AnimatorConditionMode.Greater, 0.4f, "Speed");
+                interrupt.hasExitTime = false;
+                interrupt.duration = 0.2f;
+            }
+            EditorUtility.SetDirty(ctrl);
+            AssetDatabase.SaveAssets();
+        }
+
+        /// Professor Ada, standing at pos. Realistic Rocketbox avatar, the guide's controller, a trigger capsule for clicks.
+        public static GuideNpc BuildGuide(Vector3 pos, float yaw)
+        {
+            bool have = EnsureGuide();
+            var ctrlAsset = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(GUIDE_CTRL);
+            var root = new GameObject("Guide_ProfessorAda");
+            root.transform.position = pos;
+            var body = Group("Body", root.transform);
+            body.localPosition = Vector3.zero;
+            Animator anim = null;
+            Transform head = null;
+            var fbx = have ? AssetDatabase.LoadAssetAtPath<GameObject>(GuideFbx) : null;
+            if (fbx != null)
+            {
+                var inst = (GameObject)PrefabUtility.InstantiatePrefab(fbx, body);
+                inst.transform.localPosition = Vector3.zero;
+                inst.transform.localRotation = Quaternion.identity;
+                var lt = FindDeep(inst.transform, "Bip01 L Thigh");
+                var rt = FindDeep(inst.transform, "Bip01 R Thigh");
+                if (lt != null && rt != null)
+                {
+                    Vector3 left = lt.position - rt.position; left.y = 0f;
+                    if (left.sqrMagnitude > 1e-6f)
+                    {
+                        Vector3 fwd = Vector3.Cross(Vector3.up, left.normalized);
+                        inst.transform.Rotate(0f, Vector3.SignedAngle(fwd, Vector3.forward, Vector3.up), 0f, Space.World);
+                    }
+                }
+                Bounds b = WorldBounds(inst);
+                if (b.size.y < 1.4f || b.size.y > 2.2f) inst.transform.localScale *= 1.66f / Mathf.Max(0.01f, b.size.y);
+                b = WorldBounds(inst);
+                inst.transform.position += Vector3.up * (body.position.y - b.min.y);
+                var pelvis = FindDeep(inst.transform, "Bip01 Pelvis");
+                if (pelvis != null)
+                {
+                    Vector3 d = pelvis.position - body.position; d.y = 0f;
+                    inst.transform.position -= d;
+                }
+                var mats = GuideMaterials();
+                foreach (var smr in inst.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                {
+                    var sm = smr.sharedMaterials;
+                    for (int k = 0; k < sm.Length; k++)
+                    {
+                        string nm = sm[k] != null ? sm[k].name.ToLowerInvariant() : "";
+                        sm[k] = nm.Contains("glass") ? mats[3] : nm.Contains("opac") ? mats[2] : nm.Contains("head") ? mats[1] : mats[0];
+                    }
+                    smr.sharedMaterials = sm;
+                    smr.updateWhenOffscreen = true;
+                    smr.shadowCastingMode = ShadowCastingMode.On;
+                }
+                anim = inst.GetComponent<Animator>();
+                if (anim == null) anim = inst.AddComponent<Animator>();
+                if (anim.avatar == null) anim.avatar = AssetDatabase.LoadAllAssetsAtPath(GuideFbx).OfType<Avatar>().FirstOrDefault();
+                anim.runtimeAnimatorController = ctrlAsset;
+                anim.applyRootMotion = false;
+                anim.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+                head = FindDeep(inst.transform, "Bip01 Head");
+            }
+            else
+            {
+                var cap = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+                cap.name = "PlaceholderBody";
+                cap.transform.SetParent(body, false);
+                cap.transform.localPosition = new Vector3(0f, 0.85f, 0f);
+                cap.transform.localScale = new Vector3(0.5f, 0.85f, 0.5f);
+                Object.DestroyImmediate(cap.GetComponent<Collider>());
+            }
+            root.transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+
+            var click = root.AddComponent<CapsuleCollider>();
+            click.center = new Vector3(0f, 0.86f, 0f);
+            click.height = 1.72f;
+            click.radius = 0.3f;
+            click.isTrigger = true;
+            SetLayer(root, 2);    // Ignore Raycast: never in the way of the player's clicks, the camera or the walk map
+
+            var g = root.AddComponent<GuideNpc>();
+            g.animator = anim;
+            g.head = head;
+            g.clickCollider = click;
             return g;
         }
 

@@ -511,7 +511,7 @@ namespace SortOrStay
             try
             {
                 if (navInstance.valid) navInstance.Remove();
-                var bounds = new Bounds(transform.position + Vector3.up * navCenterOffset, new Vector3(60f, navBoundsHeight, 60f));
+                var bounds = new Bounds(transform.position + Vector3.up * navCenterOffset, new Vector3(80f, navBoundsHeight, 80f));
                 var sources = new List<NavMeshBuildSource>();
                 NavMeshBuilder.CollectSources(bounds, Physics.DefaultRaycastLayers, NavMeshCollectGeometry.PhysicsColliders, 0,
                                               new List<NavMeshBuildMarkup>(), sources);
@@ -550,7 +550,7 @@ namespace SortOrStay
 
             // mouse-look mode: a click on the game grabs the cursor again
             if (!pointer && !paused && mouse != null && mouse.leftButton.wasPressedThisFrame && Cursor.lockState != CursorLockMode.Locked
-                && !(ui != null && ui.EndCardOpen))
+                && !(ui != null && (ui.EndCardOpen || ui.ModalOpen)))
             {
                 LockCursor();
                 LockedThisFrame = Time.frameCount;
@@ -579,7 +579,7 @@ namespace SortOrStay
                         else camDistance = Mathf.Clamp(camDistance - scroll * 0.0025f, minDistance, maxDistance);
                     }
                 }
-                if (kb != null)
+                if (kb != null && !popup)
                 {
                     float kx = (kb.rightArrowKey.isPressed ? 1f : 0f) - (kb.leftArrowKey.isPressed ? 1f : 0f);
                     float ky = (kb.upArrowKey.isPressed ? 1f : 0f) - (kb.downArrowKey.isPressed ? 1f : 0f);

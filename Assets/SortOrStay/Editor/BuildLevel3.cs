@@ -187,10 +187,11 @@ namespace SortOrStayEditor
 
             float[] wz = { -2.6f, 0f, 2.6f };
             var holes = new List<Hole>();
-            foreach (float z in wz) holes.Add(new Hole(z, 1.5f, 0.85f, 3.1f));
+            if (!NoSideWindows) foreach (float z in wz) holes.Add(new Hole(z, 1.5f, 0.85f, 3.1f));      // no windows onto the next room
             WallAlongZ(room, "Wall_Right", HW + T * 0.5f, -HD - T, HD + T, H, T, mWall, holes.ToArray());
-            for (int i = 0; i < wz.Length; i++)
-                WindowZ(room, "Window_" + i, HW + T * 0.5f, wz[i], 1.5f, 0.85f, 3.1f, T, mFrame, mGlass, mWood);
+            if (!NoSideWindows)
+                for (int i = 0; i < wz.Length; i++)
+                    WindowZ(room, "Window_" + i, HW + T * 0.5f, wz[i], 1.5f, 0.85f, 3.1f, T, mFrame, mGlass, mWood);
             WallAlongZ(room, "Wall_Left", -HW - T * 0.5f, -HD - T, HD + T, H, T, mWall);
             WallAlongX(room, "Wall_Back", -HD - T * 0.5f, -HW, HW, H, T, mWall);
             WallAlongX(room, "Wall_Front", HD + T * 0.5f, -HW, HW, H, T, mWall, FrontHoles(new Hole(0f, DOOR_W, 0f, DOOR_H)));

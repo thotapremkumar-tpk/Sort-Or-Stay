@@ -21,8 +21,19 @@ namespace SortOrStay
         public bool showHud = true;
         public Color fadeColor = new Color(0.02f, 0.02f, 0.03f);
 
-        public bool PopupOpen { get; private set; }
+        /// A popup or another modal card (the room's questions, a lesson, the guide's menu) is on screen:
+        /// the world ignores clicks and keys until it closes.
+        public bool PopupOpen => popupShown || ModalOpen;
+        /// The "why this works" debrief card itself.
+        public bool DebriefOpen => popupShown;
+        /// Set by the room questions, the guide's lesson and the guide's menu while they are open.
+        public bool ModalOpen { get; set; }
         public bool EndCardOpen { get; private set; }
+
+        [Header("Rooms (five-floor building)")]
+        public int room;                      // 1-3, 0 = no rooms (standalone floor scene)
+        public SortCase roomCase;
+        bool popupShown;
         public int LastConsumeFrame { get; private set; } = -1;
 
         /// Esc can open the pause menu only during normal play.
@@ -33,12 +44,13 @@ namespace SortOrStay
         Rect cardRect, statsRect, controlsRect;      // HUD areas (GUI space) a click should not go through
 
         // light theme
-        static readonly Color Accent = new Color(0.93f, 0.45f, 0.05f);
-        static readonly Color Card = new Color(1f, 1f, 1f, 0.86f);
-        static readonly Color CardSolid = new Color(0.985f, 0.98f, 0.97f, 0.97f);
-        static readonly Color Ink = new Color(0.11f, 0.12f, 0.14f);
-        static readonly Color InkSoft = new Color(0.35f, 0.37f, 0.40f);
-        static readonly Color Pill = new Color(0.07f, 0.08f, 0.10f, 0.78f);
+        public static readonly Color Accent = new Color(0.93f, 0.45f, 0.05f);
+        public static readonly Color Card = new Color(1f, 1f, 1f, 0.86f);
+        public static readonly Color CardSolid = new Color(0.985f, 0.98f, 0.97f, 0.97f);
+        public static readonly Color Ink = new Color(0.11f, 0.12f, 0.14f);
+        public static readonly Color InkSoft = new Color(0.35f, 0.37f, 0.40f);
+        public static readonly Color Pill = new Color(0.07f, 0.08f, 0.10f, 0.78f);
+        public static readonly Color Done = new Color(0.25f, 0.68f, 0.38f, 0.92f);
 
         float fade = 1f;
         string flashMsg; Color flashColor; float flashUntil;
@@ -84,6 +96,9 @@ namespace SortOrStay
         }
 
         public void SetObjective(string s) { objective = s; }
+
+        /// A subtitle line is on screen (bottom centre).
+        public bool SubtitleShowing => !string.IsNullOrEmpty(subtitle) && Time.time < subtitleUntil;
         public void SetStats(string s) { stats = s; }
         public void ShowControls(float seconds) { controlsUntil = Time.time + seconds; }
 
@@ -94,13 +109,16 @@ namespace SortOrStay
         {
             if (EndCardOpen) return;            // the floor is already over: the end card stays on top
             popupTitle = title; popupBody = body; popupFooter = footer;
-            PopupOpen = true; popupOpenedAt = Time.unscaledTime;
+            popupShown = true; popupOpenedAt = Time.unscaledTime;
         }
+
+        /// Something on the HUD (or the guide) used this click or key: the world ignores it this frame.
+        public void ConsumeClick() { LastConsumeFrame = Time.frameCount; }
 
         public void ClosePopup()
         {
-            if (!PopupOpen) return;
-            PopupOpen = false;
+            if (!popupShown) return;
+            popupShown = false;
             LastConsumeFrame = Time.frameCount;
         }
 
@@ -128,14 +146,14 @@ namespace SortOrStay
         public void ShowEndCard(string title, string body, string footer)
         {
             endTitle = title; endBody = body; endFooter = footer;
-            EndCardOpen = true; PopupOpen = false;
+            EndCardOpen = true; popupShown = false; ModalOpen = false;
         }
 
         // ------------------------------------------------------------ input
 
         void Update()
         {
-            if (!PopupOpen) return;
+            if (!popupShown) return;
             var kb = Keyboard.current; var mouse = Mouse.current;
             bool close = (kb != null && (kb.eKey.wasPressedThisFrame || kb.enterKey.wasPressedThisFrame || kb.spaceKey.wasPressedThisFrame))
                       || (mouse != null && mouse.leftButton.wasPressedThisFrame);
@@ -175,6 +193,23 @@ namespace SortOrStay
                     Text(chip, i.ToString(), sChip, cur || done ? Color.white : InkSoft);
                 }
 
+                // the floor's three rooms: best, average, worst case
+                if (room > 0)
+                {
+                    string[] names = { "BEST", "AVERAGE", "WORST" };
+                    float[] widths = { 72f, 112f, 88f };
+                    float rx = cx0 + 5 * 46f + 16f;
+                    for (int k = 1; k <= 3; k++)
+                    {
+                        float w = widths[k - 1];
+                        Rect chip = new Rect(rx, cy0, w, 26f);
+                        bool cur = k == room, done = k < room;
+                        Box(chip, cur ? new Color(0.16f, 0.42f, 0.78f, 0.95f) : done ? Done : new Color(1f, 1f, 1f, 0.7f));
+                        Text(chip, names[k - 1], sChip, cur || done ? Color.white : InkSoft);
+                        rx += w + 8f;
+                    }
+                }
+
                 // move counter, top right
                 if (!string.IsNullOrEmpty(stats))
                 {
@@ -209,8 +244,8 @@ namespace SortOrStay
                 if (Time.time < controlsUntil)
                 {
                     string c = promptAtCursor
-                        ? "Click a thing to walk over and use it  ·  Click the floor to walk  ·  Right-drag / arrows turn  ·  Scroll zoom  ·  WASD walk  ·  Space jump  ·  H hint  ·  Tab mouse-look  ·  Esc menu"
-                        : "WASD walk  ·  Shift run  ·  Space jump  ·  Mouse / arrows look  ·  Click / E use  ·  H hint  ·  V camera  ·  C character  ·  Tab point-and-click  ·  Esc menu";
+                        ? "Click a thing to walk over and use it  ·  Click the floor to walk  ·  Right-drag / arrows turn  ·  Scroll zoom  ·  WASD walk  ·  Space jump  ·  H hint (Ada comes)  ·  T lesson  ·  Tab mouse-look  ·  Esc menu"
+                        : "WASD walk  ·  Shift run  ·  Space jump  ·  Mouse / arrows look  ·  Click / E use  ·  H hint  ·  T lesson  ·  V camera  ·  C character  ·  Tab point-and-click  ·  Esc menu";
                     Vector2 sz = sSmall.CalcSize(new GUIContent(c));
                     Rect r = new Rect(28f, H - 28f - 46f, Mathf.Min(sz.x + 36f, W - 56f), 46f);
                     controlsRect = r;
@@ -244,7 +279,7 @@ namespace SortOrStay
             }
 
             // popup ("why this works")
-            if (PopupOpen)
+            if (popupShown)
             {
                 float pw = Mathf.Min(1060f, W - 80f);
                 float bodyH = sPopBody.CalcHeight(new GUIContent(popupBody), pw - 96f);
@@ -285,7 +320,7 @@ namespace SortOrStay
         {
             var pc = PlayerController.Instance;
             const float bw = 420f, bh = 54f, gap = 12f;
-            int rows = 6;
+            int rows = 8;
             int floorCount = GameState.FloorScenes.Length;
             float ph = 120f + rows * (bh + gap) + 40f;
             Rect r = new Rect((W - 520f) * 0.5f, (H - ph) * 0.5f, 520f, ph);
@@ -300,7 +335,7 @@ namespace SortOrStay
             float x = r.x + 50f;
             if (Button(new Rect(x, y, bw, bh), "Resume")) Resume();
             y += bh + gap;
-            if (Button(new Rect(x, y, bw, bh), "Restart this floor")) LevelManager.Reload();
+            if (Button(new Rect(x, y, bw, bh), BuildingManager.Instance != null && room > 0 ? "Restart this room" : "Restart this floor")) LevelManager.Reload();
             y += bh + gap;
             // one button per floor; floors whose scene is not built yet are greyed out
             float fw = (bw - (floorCount - 1) * gap) / floorCount;
@@ -320,6 +355,19 @@ namespace SortOrStay
                 PlayerController.PointerMode = !PlayerController.PointerMode;
                 Info(PlayerController.PointerMode ? "Point and click" : "Mouse look");
             }
+            y += bh + gap;
+            // Professor Ada's dialogs (hints, lessons, the welcome on each floor) can be switched off
+            if (Button(new Rect(x, y, bw, bh), "Guide dialogs:  " + (GuideNpc.DialogsOn ? "on" : "off")))
+            {
+                GuideNpc.DialogsOn = !GuideNpc.DialogsOn;
+                Info(GuideNpc.DialogsOn ? "Guide dialogs on:  Professor Ada comes when you press H" : "Guide dialogs off:  hints appear as text");
+            }
+            y += bh + gap;
+            if (Button(new Rect(x, y, bw, bh), "Ada's voice:  " + (GuideVoice.On ? "on" : "off")))
+            {
+                GuideVoice.On = !GuideVoice.On;
+                Info(GuideVoice.On ? "Professor Ada's voice on" : "Professor Ada's voice off  (her lines stay on screen)");
+            }
 
             // a click outside the card resumes play
             var e = Event.current;
@@ -328,11 +376,15 @@ namespace SortOrStay
 
         void Resume() { SetPaused(false); }
 
-        bool Button(Rect r, string label)
+        bool Button(Rect r, string label) => Button(r, label, sButton);
+
+        /// A flat HUD button (light grey, orange when hovered).
+        public static bool Button(Rect r, string label, GUIStyle style)
         {
             bool hover = GUI.enabled && r.Contains(Event.current.mousePosition);
             Box(r, !GUI.enabled ? new Color(0.9f, 0.9f, 0.9f, 1f) : hover ? Accent : new Color(0.93f, 0.93f, 0.92f, 1f));
-            Text(new Rect(r.x, r.y + 14f, r.width, 30f), label, sButton, !GUI.enabled ? new Color(0.6f, 0.6f, 0.6f) : hover ? Color.white : Ink);
+            float th = style.CalcHeight(new GUIContent(label), r.width - 16f);
+            Text(new Rect(r.x + 8f, r.y + (r.height - th) * 0.5f, r.width - 16f, th + 2f), label, style, !GUI.enabled ? new Color(0.6f, 0.6f, 0.6f) : hover ? Color.white : Ink);
             return GUI.Button(r, GUIContent.none, GUIStyle.none);
         }
 
@@ -340,7 +392,7 @@ namespace SortOrStay
 
         // Colour comes from GUI.color, never from mutating a style: copied GUIStyles can share their
         // state objects, and recolouring a copy every frame turned the whole HUD one colour.
-        static void Text(Rect r, string text, GUIStyle st, Color c)
+        public static void Text(Rect r, string text, GUIStyle st, Color c)
         {
             Color old = GUI.color;
             GUI.color = Display(c);
@@ -348,7 +400,7 @@ namespace SortOrStay
             GUI.color = old;
         }
 
-        static void Box(Rect r, Color c)
+        public static void Box(Rect r, Color c)
         {
             Color old = GUI.color;
             GUI.color = Display(c);
@@ -359,13 +411,13 @@ namespace SortOrStay
         /// The project renders in linear colour space, where IMGUI treats GUI.color as linear and
         /// everything comes out washed out. The HUD colours are written as normal (sRGB) values,
         /// so convert them here.
-        static Color Display(Color c)
+        public static Color Display(Color c)
         {
             if (QualitySettings.activeColorSpace != ColorSpace.Linear) return c;
             return new Color(Mathf.GammaToLinearSpace(c.r), Mathf.GammaToLinearSpace(c.g), Mathf.GammaToLinearSpace(c.b), c.a);
         }
 
-        static void Shadow(Rect r)
+        public static void Shadow(Rect r)
         {
             Box(new Rect(r.x + 3f, r.y + 5f, r.width, r.height), new Color(0f, 0f, 0f, 0.12f));
         }
@@ -373,7 +425,7 @@ namespace SortOrStay
         static Font hudFont;
 
         /// A dynamic OS font, so every style's size and weight are honoured on any machine.
-        static Font HudFont()
+        public static Font HudFont()
         {
             if (hudFont != null) return hudFont;
             try

@@ -40,6 +40,13 @@ namespace SortOrStay
         string pendingBefore, pendingName;
         int pendingSlips;
 
+        // building: rooms, the guide's lessons and the room questions
+        string stage, walkedFor, lastDialogLine;
+        float dialogLineSince;
+        bool dialogShot, resumeWalk;
+        float lessonSince = -1f, quizNext;
+        bool lessonShot, quizShot, quizWrongDone;
+
         // building: walking down to the next floor
         bool walking;
         Vector3[] path;
@@ -91,6 +98,7 @@ namespace SortOrStay
         void ResetFloor()
         {
             exitCalled = popupDone = shotStart = shotMid = shotSolved = pending = false;
+            quizShot = quizWrongDone = false;
             popupSince = solvedSince = -1f;
             steps = actions = 0;
             sceneStart = Time.time;
@@ -109,7 +117,7 @@ namespace SortOrStay
             catch (System.Exception) { }
         }
 
-        string Label => BuildingManager.Instance != null ? $"{scene}_F{BuildingManager.Instance.CurrentIndex + 1}" : scene;
+        string Label => BuildingManager.Instance != null ? $"{scene}_F{BuildingManager.Instance.CurrentIndex + 1}R{BuildingManager.Instance.RoomIndex + 1}" : scene;
 
         void Shot(string label)
         {
@@ -143,17 +151,62 @@ namespace SortOrStay
             var wake = FindAnyObjectByType<IntroSequence>();
             if (wake != null && wake.enabled) wake.Skip();
 
-            // a new floor of the building
-            if (b != null && b.CurrentIndex != floorIndex)
+            // a new floor or room of the building
+            if (b != null)
             {
-                if (floorIndex >= 0)
-                    Log($"=== floor {b.Current.number} ({b.Current.roomName}) entered, {Time.time - walkStart:0.0} s after leaving floor {floorIndex + 1}");
-                else Log($"=== floor {b.Current.number} ({b.Current.roomName})");
-                floorIndex = b.CurrentIndex;
-                ResetFloor();
+                string st = $"{b.CurrentIndex}:{b.RoomIndex}:{b.InRoom}";
+                if (st != stage)
+                {
+                    if (b.CurrentIndex != floorIndex)
+                    {
+                        Log(floorIndex >= 0 ? $"=== floor {b.Current.number} ({b.Current.roomName}) reached, {Time.time - walkStart:0.0} s after leaving floor {floorIndex + 1}"
+                                            : $"=== floor {b.Current.number} ({b.Current.roomName})");
+                        floorIndex = b.CurrentIndex;
+                    }
+                    if (b.InRoom && !b.FloorDone)
+                    {
+                        var r = b.CurrentRoom;
+                        Log($"--- room {r.number} ({SortPuzzleBase.CaseLabel(r.sortCase)}) entered.  Deal: {(r.puzzle is IAutoPlayable a0 ? a0.DebugState() : "")}");
+                        ResetFloor();
+                    }
+                    stage = st;
+                }
             }
 
-            if (walking) { Walk(); return; }
+            // the guide's lesson: read it for a moment, then close it
+            var guide = GuideNpc.Instance;
+            if (guide != null && guide.LessonOpen)
+            {
+                if (lessonSince < 0f) { lessonSince = Time.unscaledTime; Log("guide lesson open"); }
+                if (!lessonShot && Time.unscaledTime > lessonSince + 1.2f) { lessonShot = true; Shot("1b_lesson"); }
+                if (Time.unscaledTime > lessonSince + 2.4f)
+                {
+                    guide.CloseLesson();
+                    lessonSince = -1f;
+                    Log("guide lesson closed");
+                }
+                if (walking) resumeWalk = true;     // the lesson stopped the walk: carry on afterwards
+                return;
+            }
+            if (guide != null && guide.MenuOpen) return;
+
+            // her dialogs: read each line for a moment, then move on
+            if (guide != null && guide.DialogOpen)
+            {
+                string line = Plain(guide.DialogLine);
+                if (line != lastDialogLine) { lastDialogLine = line; dialogLineSince = Time.unscaledTime; Log($"  ADA:  {line}"); }
+                if (!dialogShot && Time.unscaledTime > dialogLineSince + 0.6f) { dialogShot = true; Shot("1a_dialog"); }
+                if (Time.unscaledTime > dialogLineSince + 0.9f) guide.DialogNext();     // the first call finishes the typing, the next moves on
+                if (walking) resumeWalk = true;
+                return;
+            }
+
+            if (walking)
+            {
+                if (resumeWalk) { resumeWalk = false; GoTo(wp); }
+                Walk();
+                return;
+            }
 
             if (ui != null && ui.EndCardOpen)
             {
@@ -167,7 +220,7 @@ namespace SortOrStay
                 return;
             }
 
-            if (ui != null && ui.PopupOpen)
+            if (ui != null && ui.DebriefOpen)
             {
                 if (popupSince < 0f)
                 {
@@ -182,10 +235,37 @@ namespace SortOrStay
             if (!shotStart && Time.time > sceneStart + 1.6f) { shotStart = true; Shot("1_start"); }
 
             var puzzle = CurrentPuzzle();
+
+            // the room's questions
+            var quiz = puzzle != null ? puzzle.quiz : null;
+            if (quiz != null && quiz.Open)
+            {
+                Quiz(quiz);
+                return;
+            }
+
+            // building: a room finished (or the floor): walk to the next room, down the stairs, or out to the street
+            if (b != null)
+            {
+                string key = $"{b.CurrentIndex}:{b.RoomIndex}:{b.FloorDone}";
+                bool roomOver = (!b.InRoom && b.RoomIndex > 0) || b.FloorDone;
+                if (roomOver && walkedFor != key)
+                {
+                    walkedFor = key;
+                    var done = b.FloorDone ? b.CurrentRoom : b.Current.rooms[b.RoomIndex - 1];
+                    var res = GameState.Instance.Get(b.Current.number, done.number);
+                    Log($"room {done.number} done after {steps} steps.  Result: " + Describe(res) + (b.FloorDone ? ".  Floor done, to the stairs." : ".  On to the next room."));
+                    StartWalk(b.PathToNext());
+                    return;
+                }
+                if (!b.InRoom || b.FloorDone) return;
+            }
+
             if (puzzle == null) return;
 
             if (puzzle.Solved)
             {
+                if (b != null) return;               // the building moves on once the questions are answered
                 if (solvedSince < 0f) solvedSince = Time.time;
                 bool open = puzzle.door == null || puzzle.door.IsUnlocked;
                 // leave once the debrief has been read (or after 14 s if none came)
@@ -193,10 +273,9 @@ namespace SortOrStay
                 if (!exitCalled && open && ready)
                 {
                     exitCalled = true;
-                    int level = b != null ? b.Current.number : (LevelManager.Instance != null ? LevelManager.Instance.levelNumber : 0);
+                    int level = LevelManager.Instance != null ? LevelManager.Instance.levelNumber : 0;
                     Log($"solved after {steps} steps.  Result: " + Describe(GameState.Instance.Get(level)) + ".  Leaving the floor.");
-                    if (b != null) StartWalk(b.Current.pathOut);
-                    else if (LevelManager.Instance != null) LevelManager.Instance.ExitReached();
+                    if (LevelManager.Instance != null) LevelManager.Instance.ExitReached();
                 }
                 return;
             }
@@ -269,7 +348,7 @@ namespace SortOrStay
                 if (wp >= path.Length)
                 {
                     walking = false;
-                    Log($"  walked out in {Time.time - walkStart:0.0} s, now on floor {(b != null ? b.CurrentIndex + 1 : 0)}");
+                    Log($"  walked in {Time.time - walkStart:0.0} s, now on floor {(b != null ? b.CurrentIndex + 1 : 0)}, room {(b != null ? b.RoomIndex + 1 : 0)}, inside: {(b != null && b.InRoom ? "yes" : "no")}");
                     return;
                 }
                 GoTo(wp);
@@ -369,12 +448,39 @@ namespace SortOrStay
 
         static Vector3 Flat(Vector3 v) { v.y = 0f; return v; }
 
+        /// Answers the room's questions: the right answer, except one deliberate wrong pick per room in hands-on mode.
+        void Quiz(RoomQuiz quiz)
+        {
+            if (Time.unscaledTime < quizNext) return;
+            quizNext = Time.unscaledTime + 1.1f;
+            var q = quiz.Current;
+            if (q == null) return;
+            if (quiz.AnsweredRight)
+            {
+                if (!quizShot) { quizShot = true; Shot("3b_quiz"); }
+                quiz.Next();
+                if (!quiz.Open) Log($"  questions done:  {quiz.WrongAnswers} wrong {(quiz.WrongAnswers == 1 ? "answer" : "answers")}.  Door open: {(quiz.puzzle != null && quiz.puzzle.door != null && quiz.puzzle.door.IsUnlocked ? "yes" : "NO  <-- BUG")}");
+                return;
+            }
+            if (Hands && !quizWrongDone)
+            {
+                quizWrongDone = true;
+                int wrong = (q.correct + 1) % q.options.Length;
+                int before = quiz.WrongAnswers;
+                quiz.Pick(wrong);
+                Log($"  Q{quiz.Index + 1}  {Plain(q.text)}\n        wrong pick \"{Plain(q.options[wrong])}\":  wrong answers {before} → {quiz.WrongAnswers}, still open: {(!quiz.AnsweredRight ? "yes" : "NO  <-- BUG")}");
+                return;
+            }
+            Log($"  Q{quiz.Index + 1}  {Plain(q.text)}\n        answer \"{Plain(q.options[q.correct])}\"");
+            quiz.Pick(q.correct);
+        }
+
         void MidShot() => Shot("2_midway");
 
         static string Describe(LevelResult r)
         {
             if (r == null) return "(none recorded)";
-            return $"floor {r.level} {r.algorithm}: {r.detail}, {r.mistakes} slips, {r.hints} hints, {GameState.Clock(r.seconds)}";
+            return $"floor {r.level} room {r.room} {r.algorithm} ({SortPuzzleBase.CaseLabel(r.sortCase)}): {r.comparisons} comparisons, {r.detail}, {r.mistakes} slips, {r.hints} hints, {GameState.Clock(r.seconds)}";
         }
     }
 }

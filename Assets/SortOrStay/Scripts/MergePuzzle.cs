@@ -15,6 +15,29 @@ namespace SortOrStay
     /// The merge row is the extra memory merge sort needs.
     public class MergePuzzle : SortPuzzleBase, IAutoPlayable
     {
+        public override string Algorithm => "Merge sort";
+
+        /// Best case: already in order. Every merge empties its left run first, so it needs the fewest comparisons.
+        protected override int[] BestDeal(int[] sorted) => (int[])sorted.Clone();
+
+        /// Worst case: dealt so that every merge alternates between its two runs to the very end (most comparisons).
+        protected override int[] WorstDeal(int[] sorted) => Interleaved(sorted);
+
+        /// Undo a merge: the even positions of a sorted run form the left half, the odd ones the right half, recursively.
+        static int[] Interleaved(int[] s)
+        {
+            if (s.Length <= 1) return (int[])s.Clone();
+            var even = new List<int>();
+            var odd = new List<int>();
+            for (int i = 0; i < s.Length; i++) (i % 2 == 0 ? even : odd).Add(s[i]);
+            var a = Interleaved(even.ToArray());
+            var b = Interleaved(odd.ToArray());
+            var res = new int[s.Length];
+            a.CopyTo(res, 0);
+            b.CopyTo(res, a.Length);
+            return res;
+        }
+
         [Header("Deal")]
         public int[] valuePool = { 3, 8, 12, 17, 21, 26, 30, 34, 39, 45, 52, 58, 63, 71, 77, 84, 90, 96 };
         public int minOutOfOrderPairs = 12;
@@ -120,6 +143,7 @@ namespace SortOrStay
             int guard = 0;
             while (CountInversions(vals) < want && ++guard < 800) vals = Pick(valuePool, n);
 
+            vals = DealFor(vals);
             for (int i = 0; i < n; i++)
             {
                 items[i].puzzle = this;
@@ -462,7 +486,7 @@ namespace SortOrStay
             hintsUsed++;
             var s = splitting ? null : SmallerFront;
             if (s != null) s.Flash(SortItem.HintColor, 2.2f);
-            if (GameUI.Instance != null) GameUI.Instance.Flash(Hint(), SortItem.HintColor, 4.5f);
+            ShowHint(Hint(), 4.5f);
             Refresh();
         }
 
@@ -531,9 +555,9 @@ namespace SortOrStay
             }
             yield return new WaitForSeconds(0.3f);
 
-            if (door != null) door.Unlock();
+            UnlockDoor();
             float seconds = Time.time - startTime;
-            GameState.Instance.Record(new LevelResult
+            Record(new LevelResult
             {
                 level = 4, algorithm = "Merge sort",
                 comparisons = comparisons, swaps = moves, minSwaps = 0,
@@ -543,7 +567,7 @@ namespace SortOrStay
             Refresh();
 
             var ui = GameUI.Instance;
-            if (ui != null) ui.SetObjective("The doors are open.  Walk through them.");
+            if (ui != null) ui.SetObjective(AfterSolveObjective("The doors are open.  Walk through them."));
             yield return new WaitForSeconds(1.3f);
 
             int n = N;
@@ -561,7 +585,7 @@ namespace SortOrStay
                 $"Bubble or selection sort can need n(n−1)/2 = <b>{n * (n - 1) / 2}</b>, and the gap grows fast:  for 1,000 items about 10,000 against 500,000.\n" +
                 "The price is the merge row:  merge sort needs a second row (extra memory) to merge into." +
                 compare;
-            if (ui != null) ui.ShowPopup("THAT'S MERGE SORT", body, "Click or press E to close  ·  then walk through the doors");
+            if (ui != null) ui.ShowPopup("THAT'S MERGE SORT", body, DebriefFooter("Click or press E to close  ·  then walk through the doors"));
             busy = false;
         }
 

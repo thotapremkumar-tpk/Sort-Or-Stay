@@ -12,6 +12,8 @@ namespace SortOrStay
     /// into the gap). The part of the shelf left of the next book is always sorted.
     public class InsertionPuzzle : SortPuzzleBase, IAutoPlayable
     {
+        public override string Algorithm => "Insertion sort";
+
         [Header("Deal")]
         public int[] callNumberPool = { 4, 133, 152, 220, 299, 330, 398, 420, 512, 595, 641, 709, 782, 822, 909, 973 };
         public int minOutOfOrderPairs = 11;
@@ -100,6 +102,7 @@ namespace SortOrStay
             int guard = 0;
             while (CountInversions(vals) < want && ++guard < 800) vals = Pick(callNumberPool, n);
 
+            vals = DealFor(vals);
             // the books start on the shelf, out of order
             shelf = new SortItem[n];
             for (int i = 0; i < n; i++)
@@ -382,7 +385,7 @@ namespace SortOrStay
             SortItem show = key == null ? shelf[keyIdx]
                           : gap > 0 && shelf[gap - 1].value > key.value ? shelf[gap - 1] : key;
             if (show != null) show.Flash(SortItem.HintColor, 2.2f);
-            if (GameUI.Instance != null) GameUI.Instance.Flash(Hint(), SortItem.HintColor, 4.5f);
+            ShowHint(Hint(), 4.5f);
             Refresh();
         }
 
@@ -403,9 +406,9 @@ namespace SortOrStay
             }
             yield return new WaitForSeconds(0.3f);
 
-            if (door != null) door.Unlock();
+            UnlockDoor();
             float seconds = Time.time - startTime;
-            GameState.Instance.Record(new LevelResult
+            Record(new LevelResult
             {
                 level = 3, algorithm = "Insertion sort",
                 comparisons = comparisons, swaps = shifts, minSwaps = startInversions,
@@ -415,7 +418,7 @@ namespace SortOrStay
             Refresh();
 
             var ui = GameUI.Instance;
-            if (ui != null) ui.SetObjective("The glass doors are open.  Walk through them.");
+            if (ui != null) ui.SetObjective(AfterSolveObjective("The glass doors are open.  Walk through them."));
             yield return new WaitForSeconds(1.3f);
 
             int n = items.Count;
@@ -426,7 +429,7 @@ namespace SortOrStay
                 $"{shifts} shifts = the {startInversions} out-of-order pairs on the shelf:  every shift fixes exactly one pair.\n" +
                 $"Already in order, every book would stay put:  {n - 1} comparisons and zero shifts.  " +
                 $"That's why insertion sort is the go-to for lists that are <b>nearly sorted</b>.  In reverse order it needs n(n−1)/2 = {n * (n - 1) / 2} shifts.";
-            if (ui != null) ui.ShowPopup("THAT'S INSERTION SORT", body, "Click or press E to close  ·  then walk through the glass doors");
+            if (ui != null) ui.ShowPopup("THAT'S INSERTION SORT", body, DebriefFooter("Click or press E to close  ·  then walk through the glass doors"));
             busy = false;
         }
 

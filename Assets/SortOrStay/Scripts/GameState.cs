@@ -16,6 +16,10 @@ namespace SortOrStay
         public int mistakes;
         public float seconds;
         public string detail;      // one line for the scoreboard, e.g. "6 swaps · 27 weighings"
+        public int room;           // 1-3 in the five-floor building (0 = a standalone floor scene)
+        public SortCase sortCase;
+        public int startInversions;
+        public int quizSlips;      // wrong answers to the room's questions
     }
 
     /// Survives scene loads and keeps every floor's score for the end-of-game scoreboard.
@@ -54,12 +58,14 @@ namespace SortOrStay
 
         public void Record(LevelResult r)
         {
-            results.RemoveAll(x => x.level == r.level);
+            results.RemoveAll(x => x.level == r.level && x.room == r.room);
             results.Add(r);
-            results.Sort((a, b) => a.level.CompareTo(b.level));
+            results.Sort((a, b) => a.level != b.level ? a.level.CompareTo(b.level) : a.room.CompareTo(b.room));
         }
 
         public LevelResult Get(int level) => results.Find(x => x.level == level);
+
+        public LevelResult Get(int level, int room) => results.Find(x => x.level == level && x.room == room);
 
         public static string Clock(float seconds)
         {

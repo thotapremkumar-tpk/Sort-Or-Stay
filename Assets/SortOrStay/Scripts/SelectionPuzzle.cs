@@ -12,6 +12,24 @@ namespace SortOrStay
     /// The scale keeps no memory between passes, exactly like selection sort: n(n-1)/2 comparisons, at most n-1 swaps.
     public class SelectionPuzzle : SortPuzzleBase, IAutoPlayable
     {
+        public override string Algorithm => "Selection sort";
+
+        /// Best case for selection sort: already in order. It still weighs every crate on every pass; it only saves the swaps.
+        protected override int[] BestDeal(int[] sorted) => (int[])sorted.Clone();
+
+        /// Worst case: the heaviest crate first, the rest in order. Every pass has to swap: n-1 swaps, the most possible.
+        protected override int[] WorstDeal(int[] sorted)
+        {
+            int n = sorted.Length;
+            var v = new int[n];
+            v[0] = sorted[n - 1];
+            for (int i = 1; i < n; i++) v[i] = sorted[i - 1];
+            return v;
+        }
+
+        /// The first pass should have a swap to do.
+        protected override bool AverageOk(int[] v) => MinIndex(v, 0) != 0;
+
         [Header("Deal")]
         public int[] weightPool = { 3, 4, 6, 7, 9, 11, 12, 14, 17, 19, 22, 25, 28, 31 };
         public int minOutOfOrderPairs = 9;
@@ -80,6 +98,7 @@ namespace SortOrStay
             int want = Mathf.Min(minOutOfOrderPairs, n * (n - 1) / 2 - 1);
             while ((CountInversions(vals) < want || MinIndex(vals, 0) == 0) && ++guard < 800) vals = Pick(weightPool, n);
 
+            vals = DealFor(vals);
             for (int i = 0; i < n; i++)
             {
                 items[i].puzzle = this;
@@ -480,7 +499,7 @@ namespace SortOrStay
             if (pass >= N) return;
             hintsUsed++;
             items[Scanning ? scanAt : minIdx].Flash(SortItem.HintColor, 2.4f);
-            if (GameUI.Instance != null) GameUI.Instance.Flash(Hint(), SortItem.HintColor, 4.5f);
+            ShowHint(Hint(), 4.5f);
             Refresh();
         }
 
@@ -549,9 +568,9 @@ namespace SortOrStay
             }
             yield return new WaitForSeconds(0.3f);
 
-            if (door != null) door.Unlock();
+            UnlockDoor();
             float seconds = Time.time - startTime;
-            GameState.Instance.Record(new LevelResult
+            Record(new LevelResult
             {
                 level = 2, algorithm = "Selection sort",
                 comparisons = comparisons, swaps = swaps, minSwaps = 0,
@@ -561,7 +580,7 @@ namespace SortOrStay
             Refresh();
 
             var ui = GameUI.Instance;
-            if (ui != null) ui.SetObjective("The loading doors are open.  Walk through them.");
+            if (ui != null) ui.SetObjective(AfterSolveObjective("The loading doors are open.  Walk through them."));
             yield return new WaitForSeconds(1.3f);
 
             int n = N;
@@ -574,7 +593,7 @@ namespace SortOrStay
                 $"Your swaps  <b>{swaps}</b>   (never more than n−1 = {n - 1})        Weighings  <b>{weighings}</b>        Hints  <b>{hintsUsed}</b>        Time  <b>{GameState.Clock(seconds)}</b>\n\n" +
                 $"The algorithm's comparisons:  {n - 1}+{n - 2}+…+1 = <b>{comparisons}</b> = n(n−1)/2.  It always does exactly that many, even if the crates start in order, because it never remembers what it has seen." +
                 compare;
-            if (ui != null) ui.ShowPopup("THAT'S SELECTION SORT", body, "Click or press E to close  ·  then walk through the loading doors");
+            if (ui != null) ui.ShowPopup("THAT'S SELECTION SORT", body, DebriefFooter("Click or press E to close  ·  then walk through the loading doors"));
             busy = false;
         }
 

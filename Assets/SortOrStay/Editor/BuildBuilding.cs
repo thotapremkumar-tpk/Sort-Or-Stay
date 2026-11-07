@@ -11,13 +11,15 @@ using static SortOrStayEditor.Kit;
 
 namespace SortOrStayEditor
 {
-    /// Builds Scenes/Building.unity: the whole game as one five-floor building. Floor 1 (the Locked Room) is the top
-    /// floor, Floor 5 (the Final Vault) the ground floor. Every floor is the same room as its own scene, with one extra
-    /// doorway in the front wall (Kit.BuildingMode). A stair tower on the front of the building links them: each floor's
-    /// exit door opens onto a landing, two flights with a half-landing go down one storey, and the lower flight ends at
-    /// the next floor's entrance. A wall between the two flights keeps the next floor's exit landing separate, so the
-    /// only way down is through every room. On the ground floor the vault door opens into a corridor under the stairs
-    /// that leads out to the street. Menu: Sort or Stay > Build Building (all 5 floors).
+    /// Builds Scenes/Building.unity: the whole game as one five-floor building. Floor 1 (bubble sort) is the top
+    /// floor, Floor 5 (quick sort) the ground floor. Every floor has a hallway along the front and three rooms behind
+    /// it, side by side: Room 1 deals the algorithm's best case, Room 2 its average case, Room 3 its worst case. Each
+    /// room is the floor's own room (the same builder as its standalone scene) with a doorway from the hallway that
+    /// opens when the room before it is done. A stair tower on the front of the building links the hallways: the
+    /// hallway door to the stairs opens after Room 3, two flights with a half-landing go down one storey, and the
+    /// lower flight ends at the next hallway. On the ground floor the hallway door leads into a corridor under the
+    /// stairs and out to the street. Professor Ada, the guide, starts next to the player.
+    /// Menu: Sort or Stay > Build Building (all 5 floors).
     public static class BuildBuilding
     {
         const string SCENE = ROOT + "Scenes/Building.unity";
@@ -26,21 +28,28 @@ namespace SortOrStayEditor
         static readonly float[] LevelY = { 20f, 15f, 10f, 5f, 0f };
         const float STOREY = 5f;
         const float T = 0.2f;                 // wall / slab thickness (same as the rooms)
-        const float ZF = 5.2f;                // world z of the outer face of every floor's front wall
+        const float ZF = 5.2f;                // world z of the hallway's front wall, outer face (the stair tower starts here)
+        const float HALL_D = 3.0f;            // hallway inside depth
+        const float HALL_H = 3.0f;            // hallway ceiling height
+        const float ZR = ZF - T - HALL_D;     // outer face of every room's front wall = the hallway's back
+        const float ZH = ZF - T - HALL_D * 0.5f;   // middle of the hallway
+        const int ROOMS = 3;
+        static readonly SortCase[] RoomCases = { SortCase.Best, SortCase.Average, SortCase.Worst };
+        const float GATE_W = 1.3f, GATE_H = 2.3f;  // the hallway door to the stairs
 
-        // stair tower, x across, z' = outward from the front wall (z' = z - ZF)
-        const float LA0 = -1.1f, LA1 = 1.3f;  // lane A: from a floor's exit door down to the half-landing
-        const float LB0 = 1.6f, LB1 = 4.0f;   // lane B: from the half-landing down to the next floor's entrance
+        // stair tower, x across, z' = outward from the hallway's front wall (z' = z - ZF)
+        const float LA0 = -1.1f, LA1 = 1.3f;  // lane A: from a floor's hallway door down to the half-landing
+        const float LB0 = 1.6f, LB1 = 4.0f;   // lane B: from the half-landing down to the next floor's hallway
         const float XA = (LA0 + LA1) * 0.5f, XB = (LB0 + LB1) * 0.5f, LANE = LA1 - LA0;
         const float LAND = 1.5f;              // landing depth in front of the doors
         const int STEPS = 14;                 // per flight (half a storey)
         const float GOING = 0.28f;
         const float RUN = STEPS * GOING;      // 3.92
         const float FAR = LAND + RUN + 1.6f;  // inner face of the far wall (half-landing 1.6 deep)
-        const float TOP = 20f + 3f + T;       // tower roof = top of floor 1's ceiling
+        const float TOP = 20f + 3f + T;       // tower roof
 
         static Material mWall, mFloorTile, mStep, mNosing, mRail, mDark, mSign, mExit, mDoor, mFrame, mGlass, mLight,
-                        mPavement, mRoad, mKerb, mFacade, mLamp, mBench;
+                        mPavement, mRoad, mKerb, mFacade, mLamp, mBench, mRed, mHallWall, mHallFloor, mStripe;
 
         static float Riser => STOREY * 0.5f / STEPS;
 
@@ -55,11 +64,15 @@ namespace SortOrStayEditor
         {
             Begin();
             EnsureCharacters();
+            EnsureGuide();
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             MakeMaterials();
 
             var building = new GameObject("Building").transform;
-            var parts = new FloorParts[5];
+            var parts = new FloorParts[5][];
+            var floorRoots = new Transform[5];
+            var stairsGates = new RoomGate[5];
+            var towerDoors = new EntranceDoor[5];
             Func<FloorParts>[] builders = { BuildLevel1.BuildFloor, BuildLevel2.BuildFloor, BuildLevel3.BuildFloor, BuildLevel4.BuildFloor, BuildLevel5.BuildFloor };
 
             BuildingMode = true;
@@ -67,53 +80,79 @@ namespace SortOrStayEditor
             {
                 for (int k = 0; k < 5; k++)
                 {
-                    var before = new HashSet<GameObject>(scene.GetRootGameObjects());
-                    var p = builders[k]();
-                    MakeMaterials();                                  // the floor builders share the Kit statics
-                    if (k > 0) Entrance(p);
-                    foreach (var go in scene.GetRootGameObjects())    // anything a builder left at the scene root
-                        if (!before.Contains(go) && go != p.root.gameObject) go.transform.SetParent(p.root, true);
-                    p.root.SetParent(building, true);
-                    p.root.position = new Vector3(0f, LevelY[k], RoomZ(p));
-                    parts[k] = p;
+                    var floorRoot = Group($"Floor{k + 1}", building);
+                    floorRoot.position = Vector3.zero;
+                    floorRoots[k] = floorRoot;
+                    parts[k] = new FloorParts[ROOMS];
+                    for (int r = 0; r < ROOMS; r++)
+                    {
+                        NoSideWindows = r < ROOMS - 1;                    // a room on the right: no windows that way
+                        var before = new HashSet<GameObject>(scene.GetRootGameObjects());
+                        var p = builders[k]();
+                        MakeMaterials();                                  // the floor builders share the Kit statics
+                        RoomEntrance(p, k, r);
+                        foreach (var go in scene.GetRootGameObjects())    // anything a builder left at the scene root
+                            if (!before.Contains(go) && go != p.root.gameObject) go.transform.SetParent(p.root, true);
+                        p.root.name = $"{p.root.name}_Room{r + 1}";
+                        p.root.SetParent(floorRoot, true);
+                        p.root.position = new Vector3(RoomX(p, r), LevelY[k], RoomZ(p));
+
+                        // the room's case and its questions
+                        var pz = p.puzzle;
+                        pz.sortCase = RoomCases[r];
+                        pz.floorNumber = k + 1;
+                        pz.roomNumber = r + 1;
+                        var quiz = p.systems.gameObject.AddComponent<RoomQuiz>();
+                        quiz.puzzle = pz;
+                        pz.quiz = quiz;
+                        parts[k][r] = p;
+                    }
+                    Hallway(floorRoot, k, parts[k], out stairsGates[k], out towerDoors[k]);
                 }
             }
-            finally { BuildingMode = false; }
+            finally { BuildingMode = false; NoSideWindows = false; }
 
             var tower = Group("StairTower", building);
             tower.position = new Vector3(0f, 0f, ZF);
-            TowerShell(tower, parts);
-            for (int k = 0; k < 4; k++) Shaft(tower, k, parts[k + 1]);
+            TowerShell(tower);
+            for (int k = 0; k < 4; k++) Shaft(tower, k, parts[k + 1][0]);
             ExitCorridor(tower);
-            Street(building);
+            float bx0 = float.MaxValue, bx1 = float.MinValue;
+            for (int k = 0; k < 5; k++) { bx0 = Mathf.Min(bx0, HallX0(parts[k]) - T); bx1 = Mathf.Max(bx1, HallX1(parts[k]) + T); }
+            Street(building, bx0, bx1);
 
-            // ---------- player: wakes up on the top floor ----------
-            Vector3 spawn0 = parts[0].root.TransformPoint(parts[0].spawn);
+            // ---------- player: wakes up in Room 1 of the top floor ----------
+            Vector3 spawn0 = parts[0][0].root.TransformPoint(parts[0][0].spawn);
             var player = BuildPlayer(spawn0, 0f);
             player.navBoundsHeight = 11f;          // walk map: this floor and the stairs down to the next one
             player.navCenterOffset = -1f;
 
+            // ---------- the guide ----------
+            var guide = BuildGuide(spawn0 + new Vector3(-1.2f, 0f, 0.6f), 180f);
+            guide.transform.SetParent(building, true);
+
             // ---------- systems ----------
             var sys = new GameObject("Systems").transform;
-            var ui = BuildUI(sys, parts[0].title, 1);
+            var ui = BuildUI(sys, parts[0][0].title, 1);
 
             var intro = sys.gameObject.AddComponent<IntroSequence>();
             intro.player = player;
-            intro.puzzle = parts[0].puzzle;
+            intro.puzzle = parts[0][0].puzzle;
 
             var lm = sys.gameObject.AddComponent<LevelManager>();
             lm.levelNumber = 5;
             lm.nextScene = "";
             lm.nextFloorLabel = "";
-            lm.door = parts[4].exitDoor;
+            lm.door = parts[4][ROOMS - 1].exitDoor;
             lm.player = player;
             StreetExitTrigger(tower, lm);
 
             var bm = sys.gameObject.AddComponent<BuildingManager>();
             bm.player = player;
             bm.intro = intro;
+            bm.guide = guide;
             bm.floors = new BuildingManager.Floor[5];
-            for (int k = 0; k < 5; k++) bm.floors[k] = FloorData(k, parts);
+            for (int k = 0; k < 5; k++) bm.floors[k] = FloorData(k, parts[k], floorRoots[k], stairsGates[k], towerDoors[k]);
 
             BrightPostFx(sys, "Building_PostFX", 0.18f);
             BrightEnvironment(new Color(0.82f, 0.85f, 0.90f), new Color(0.68f, 0.67f, 0.64f), new Color(0.42f, 0.40f, 0.38f));
@@ -125,53 +164,93 @@ namespace SortOrStayEditor
             AddToBuildSettings(SCENE, 0);
             AssetDatabase.SaveAssets();
             Selection.activeGameObject = building.gameObject;
-            Debug.Log("Sort or Stay: the five-floor building is built and saved to " + SCENE + ". Press Play: you wake up on the top floor.");
+            Debug.Log("Sort or Stay: the five-floor building (3 rooms per floor, with Professor Ada) is built and saved to " + SCENE + ". Press Play: you wake up in Room 1 of the top floor.");
         }
 
-        /// Floors line up on their front walls: a room's centre sits half its depth (plus the wall) behind ZF.
-        static float RoomZ(FloorParts p) => ZF - (p.depth * 0.5f + T);
+        // ============================================================ layout
 
-        static BuildingManager.Floor FloorData(int k, FloorParts[] parts)
+        /// Rooms sit side by side along +x, Room 1 at x = 0 (across the hallway from the stairs), walls back to back.
+        static float RoomX(FloorParts p, int r) => r * (p.width + 2f * T);
+
+        /// Every room's front wall is the hallway's back wall: a room's centre sits half its depth (plus the wall) behind ZR.
+        static float RoomZ(FloorParts p) => ZR - (p.depth * 0.5f + T);
+
+        static float HallX0(FloorParts[] ps) => -ps[0].width * 0.5f - T;
+        static float HallX1(FloorParts[] ps) => RoomX(ps[ROOMS - 1], ROOMS - 1) + ps[ROOMS - 1].width * 0.5f + T;
+
+        static string CaseBlurb(int floor, SortCase c)
         {
-            var p = parts[k];
-            float zc = RoomZ(p), y = LevelY[k];
+            switch (floor)
+            {
+                case 1: return c == SortCase.Best ? "the keys are <b>almost in order</b>." : c == SortCase.Worst ? "the keys are in <b>reverse order</b>:  every compare is a swap." : "the keys are in <b>random order</b>.";
+                case 2: return c == SortCase.Best ? "the crates are <b>already in order</b> (but you can't see the weights)." : c == SortCase.Worst ? "the <b>heaviest crate is first</b>:  a swap on every pass." : "the weights are in <b>random order</b>.";
+                case 3: return c == SortCase.Best ? "the shelf is <b>nearly sorted</b>." : c == SortCase.Worst ? "the shelf is in <b>reverse order</b>:  every book travels all the way." : "the call numbers are in <b>random order</b>.";
+                case 4: return c == SortCase.Best ? "the blocks are <b>already in order</b>." : c == SortCase.Worst ? "dealt so that <b>every merge alternates</b> to the end." : "the blocks are in <b>random order</b>.";
+                default: return c == SortCase.Best ? "every pivot will land <b>in the middle</b>." : c == SortCase.Worst ? "the bars are <b>already sorted</b>:  every pivot is the biggest!" : "the bars are in <b>random order</b>.";
+            }
+        }
+
+        static BuildingManager.Floor FloorData(int k, FloorParts[] ps, Transform root, RoomGate stairs, EntranceDoor entrance)
+        {
+            float y = LevelY[k];
             var f = new BuildingManager.Floor
             {
-                number = p.number,
-                title = p.title,
-                roomName = p.roomName,
-                objective = p.objective,
-                lines = p.lines,
-                puzzle = p.puzzle,
-                exitDoor = p.exitDoor,
-                entrance = p.root.GetComponentInChildren<EntranceDoor>(true),
-                root = p.root,
-                spawn = k == 0 ? p.root.TransformPoint(p.spawn) : new Vector3(EntranceX, y, ZF - T - 1.4f),
-                spawnYaw = k == 0 ? 0f : 180f,
-                roomMin = new Vector3(-p.width * 0.5f, y, zc - p.depth * 0.5f),
-                roomMax = new Vector3(p.width * 0.5f, y + p.height, zc + p.depth * 0.5f),
+                number = ps[0].number,
+                title = ps[0].title,
+                roomName = ps[0].roomName,
+                root = root,
+                stairsGate = stairs,
+                entrance = entrance,
+                hallMin = new Vector3(HallX0(ps), y, ZR),
+                hallMax = new Vector3(HallX1(ps), y + HALL_H, ZF - T),
+                rooms = new BuildingManager.Room[ROOMS],
             };
+            for (int r = 0; r < ROOMS; r++)
+            {
+                var p = ps[r];
+                float xr = RoomX(p, r), zc = RoomZ(p), inner = ZR - T;
+                float ex = xr + p.entranceX;
+                var c = RoomCases[r];
+                f.rooms[r] = new BuildingManager.Room
+                {
+                    number = r + 1,
+                    sortCase = c,
+                    objective = $"<b>Room {r + 1}  ·  {SortPuzzleBase.CaseLabel(c)}:</b>  {CaseBlurb(k + 1, c)}\n" + p.objective,
+                    puzzle = p.puzzle,
+                    exitDoor = p.exitDoor,
+                    entrance = p.root.GetComponentInChildren<RoomGate>(true),
+                    root = p.root,
+                    roomMin = new Vector3(xr - p.width * 0.5f, y, zc - p.depth * 0.5f),
+                    roomMax = new Vector3(xr + p.width * 0.5f, y + p.height, zc + p.depth * 0.5f),
+                    spawn = new Vector3(ex, y, inner - 1.9f),
+                    spawnYaw = 180f,
+                    entranceOutside = new Vector3(ex, y, ZR + 0.9f),
+                    entranceInside = new Vector3(ex, y, inner - 1.9f),
+                    exitInside = new Vector3(xr, y, inner - 1.1f),
+                    exitOutside = new Vector3(xr, y, ZH),
+                };
+            }
 
             float mid = y - STOREY * 0.5f;
             if (k < 4)
             {
                 float yb = LevelY[k + 1];
-                f.pathOut = new[]
+                f.stairsPath = new[]
                 {
-                    new Vector3(0f, y, ZF - T - 1.1f),                 // in front of the exit door, inside
+                    new Vector3(XA, y, ZH),                           // in the hallway, in front of the stairs door
                     new Vector3(XA, y, ZF + 0.8f),                    // landing
                     new Vector3(XA, mid, ZF + LAND + RUN + 0.6f),     // down flight A to the half-landing
                     new Vector3(XB, mid, ZF + LAND + RUN + 0.6f),     // across
                     new Vector3(XB, yb, ZF + LAND - 0.4f),            // down flight B
-                    new Vector3(EntranceX, yb, ZF - T - 0.7f),        // through the entrance
-                    new Vector3(EntranceX, yb, ZF - T - 1.9f),        // into the next floor
+                    new Vector3(EntranceX, yb, ZF - T - 0.7f),        // through the hallway door
+                    new Vector3(EntranceX, yb, ZH),                   // into the next floor's hallway
                 };
             }
             else
             {
-                f.pathOut = new[]
+                f.stairsPath = new[]
                 {
-                    new Vector3(0f, 0f, ZF - T - 1.1f),               // in front of the vault door
+                    new Vector3(XA, 0f, ZH),                          // in the hallway, in front of the street door
                     new Vector3(XA, 0f, ZF + 0.9f),                   // the corridor under the stairs
                     new Vector3(XA, 0f, ZF + FAR - 0.5f),
                     new Vector3(XA, 0f, ZF + FAR + T + 1.0f),         // out through the street door
@@ -203,52 +282,189 @@ namespace SortOrStayEditor
             mFacade = Pbr("B_Facade", "PaintedPlaster017", new Color(0.86f, 0.80f, 0.70f), 4f, 0.1f, 0f);
             mLamp = Emissive("B_StreetLamp", new Color(1f, 0.95f, 0.8f), new Color(1f, 0.9f, 0.7f), 1.2f);
             mBench = Pbr("B_Bench", "WoodFloor064", new Color(0.70f, 0.52f, 0.34f), 0.6f, 0.3f, 0f);
+            mRed = Emissive("B_GateLamp", new Color(1f, 0.12f, 0.08f), new Color(1f, 0.12f, 0.08f), 3f);
+            mHallWall = Pbr("B_HallWall", "PaintedPlaster017", new Color(0.97f, 0.96f, 0.93f), 2.5f, 0.1f, 0f);
+            mHallFloor = Pbr("B_HallFloor", "Tiles107", new Color(0.90f, 0.90f, 0.88f), 2f, 0.35f, 0f);
+            mStripe = Flat("B_HallStripe", new Color(0.93f, 0.55f, 0.12f), 0.3f, 0f);
         }
 
-        // ============================================================ entrance doorway (floor-local, before the floor moves)
+        // ============================================================ doors
 
-        static void Entrance(FloorParts p)
+        /// The doorway from the hallway into a room (floor-local, before the room moves): a sliding door that opens
+        /// when the room before it is done and shuts behind the player, a red / green lamp and a sign facing the hallway.
+        static void RoomEntrance(FloorParts p, int k, int r)
         {
             float hd = p.depth * 0.5f;
-            var g = Group("EntranceDoor", p.root);
-            g.localPosition = new Vector3(EntranceX, 0f, hd + T * 0.5f);     // centred in the front wall's thickness
-            float w = EntranceW, h = EntranceH, d = T + 0.12f;
+            var g = Group("RoomEntrance", p.root);
+            g.localPosition = new Vector3(p.entranceX, 0f, hd + T * 0.5f);     // centred in the front wall's thickness
+            float w = p.entranceW, h = EntranceH, d = T + 0.12f;
+            var panel = DoorFrameAndPanel(g, w, h, d);
 
+            // lamp above the doorway, hallway side
+            var lamp = Sphere("Lamp", new Vector3(-w * 0.5f - 0.18f, h + 0.12f, T * 0.5f + 0.05f), 0.08f, mRed, g);
+            Cube("Lamp_Base", new Vector3(-w * 0.5f - 0.18f, h + 0.12f, T * 0.5f + 0.01f), new Vector3(0.13f, 0.13f, 0.02f), mFrame, g, false);
+
+            // sign above the doorway, read from the hallway (faces +Z)
+            var c = RoomCases[r];
+            var sign = Group("RoomSign", g);
+            sign.localPosition = new Vector3(0f, h + 0.42f, T * 0.5f + 0.02f);
+            sign.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            float sw = Mathf.Max(w + 0.9f, 1.9f);
+            Cube("Plate", Vector3.zero, new Vector3(sw, 0.46f, 0.03f), CaseMaterial(c), sign, false);
+            Text("Text", sign, new Vector3(0f, 0.06f, -0.018f), new Vector2(sw - 0.1f, 0.22f), $"ROOM {r + 1}  ·  {SortPuzzleBase.CaseLabel(c).ToUpperInvariant()}",
+                 Color.white, TextAlignmentOptions.Center, true);
+            Text("Name", sign, new Vector3(0f, -0.13f, -0.018f), new Vector2(sw - 0.1f, 0.12f), GuideNpc.AlgorithmName(k + 1).ToUpperInvariant(),
+                 new Color(0.92f, 0.95f, 1f), TextAlignmentOptions.Center, true);
+
+            var gate = g.gameObject.AddComponent<RoomGate>();
+            gate.panel = panel;
+            gate.openOffset = new Vector3(p.entranceSlide * (w + 0.06f), 0f, 0f);
+            gate.inward = Vector3.back;
+            gate.closeBehind = true;
+            gate.lamp = lamp.GetComponent<Renderer>();
+            gate.lockedMessage = r == 0 ? "Locked.  This floor's rooms open once you come down the stairs."
+                                        : $"Locked.  Finish Room {r} first:  sort it and answer the questions.";
+        }
+
+        static Material CaseMaterial(SortCase c)
+        {
+            if (c == SortCase.Best) return Flat("B_SignBest", new Color(0.18f, 0.55f, 0.36f), 0.35f, 0f);
+            if (c == SortCase.Worst) return Flat("B_SignWorst", new Color(0.70f, 0.20f, 0.16f), 0.35f, 0f);
+            return Flat("B_SignAverage", new Color(0.12f, 0.36f, 0.66f), 0.35f, 0f);
+        }
+
+        /// Frame, threshold and a sliding panel centred on g (the doorway, in a wall of thickness T). Returns the panel.
+        static Transform DoorFrameAndPanel(Transform g, float w, float h, float d)
+        {
             Cube("Frame_L", new Vector3(-w * 0.5f - 0.05f, (h + 0.1f) * 0.5f, 0f), new Vector3(0.1f, h + 0.1f, d), mFrame, g, false);
             Cube("Frame_R", new Vector3(w * 0.5f + 0.05f, (h + 0.1f) * 0.5f, 0f), new Vector3(0.1f, h + 0.1f, d), mFrame, g, false);
             Cube("Frame_Top", new Vector3(0f, h + 0.05f, 0f), new Vector3(w + 0.2f, 0.1f, d), mFrame, g, false);
             Cube("Threshold", new Vector3(0f, 0.008f, 0f), new Vector3(w, 0.016f, T + 0.1f), mFrame, g, false);
 
-            // sliding panel: waits inside the wall (towards +x), closes once the player is in the room
             var panel = Group("Panel", g);
             panel.localPosition = new Vector3(0f, h * 0.5f, 0f);
             Cube("Slab", Vector3.zero, new Vector3(w - 0.02f, h - 0.02f, 0.06f), mDoor, panel);
             Cube("Window", new Vector3(0f, h * 0.2f, -0.031f), new Vector3(w * 0.4f, h * 0.22f, 0.006f), mGlass, panel, false);
             Cube("Window_Out", new Vector3(0f, h * 0.2f, 0.031f), new Vector3(w * 0.4f, h * 0.22f, 0.006f), mGlass, panel, false);
             Cube("Handle", new Vector3(-w * 0.5f + 0.12f, 0f, -0.045f), new Vector3(0.03f, 0.3f, 0.03f), mFrame, panel, false);
+            Cube("Handle_Out", new Vector3(-w * 0.5f + 0.12f, 0f, 0.045f), new Vector3(0.03f, 0.3f, 0.03f), mFrame, panel, false);
             Cube("Kick", new Vector3(0f, -h * 0.5f + 0.13f, 0.032f), new Vector3(w - 0.08f, 0.22f, 0.006f), mFrame, panel, false);
+            return panel;
+        }
 
-            // floor sign above the doorway, on the stair side (faces +Z, read from the stairs)
-            var sign = Group("FloorSign", g);
-            sign.localPosition = new Vector3(0f, h + 0.42f, T * 0.5f + 0.02f);
-            sign.localRotation = Quaternion.Euler(0f, 180f, 0f);
-            Cube("Plate", Vector3.zero, new Vector3(w + 0.6f, 0.42f, 0.03f), mSign, sign, false);
-            Text("Text", sign, new Vector3(0f, 0.03f, -0.018f), new Vector2(w + 0.5f, 0.22f), $"FLOOR {p.number}",
+        // ============================================================ hallway
+
+        /// One floor's hallway (world space): floor, ceiling, lights, end walls, and the front wall with the door to
+        /// the stairs (opens after Room 3) and, below the top floor, the door from the stairs above.
+        static void Hallway(Transform floorRoot, int k, FloorParts[] ps, out RoomGate stairsGate, out EntranceDoor towerDoor)
+        {
+            float y = LevelY[k];
+            float x0 = HallX0(ps), x1 = HallX1(ps), xc = (x0 + x1) * 0.5f, len = x1 - x0;
+            float yTop = k == 0 ? TOP + T : LevelY[k - 1] - T;      // up to the slab of the floor above (or the roof)
+            var g = Group($"Hallway_F{k + 1}", floorRoot);
+
+            Cube("Floor", new Vector3(xc, y - T * 0.5f, (ZR + ZF) * 0.5f), new Vector3(len + 2f * T, T, ZF - ZR), mHallFloor, g);
+            Cube("Ceiling", new Vector3(xc, y + HALL_H + T * 0.5f, (ZR + ZF - T) * 0.5f), new Vector3(len, T, ZF - T - ZR), mHallWall, g);
+            float wh = yTop - (y - T), wy = (yTop + y - T) * 0.5f;
+            Cube("Wall_End_L", new Vector3(x0 - T * 0.5f, wy, (ZR - T + ZF) * 0.5f), new Vector3(T, wh, ZF - ZR + T), mHallWall, g);
+            Cube("Wall_End_R", new Vector3(x1 + T * 0.5f, wy, (ZR - T + ZF) * 0.5f), new Vector3(T, wh, ZF - ZR + T), mHallWall, g);
+
+            // front wall: holes for the stairs door (lane A) and the door from the stairs above (lane B)
+            var holes = new List<(float c, float w, float h)> { (XA, GATE_W, GATE_H) };
+            if (k > 0) holes.Add((EntranceX, EntranceW, EntranceH));
+            FrontWall(g, x0 - T, x1 + T, y - T, yTop, y, ZF - T * 0.5f, holes);
+
+            // a guiding stripe along the floor and skirting on the front wall
+            Cube("Stripe", new Vector3(xc, y + 0.004f, ZH), new Vector3(len - 0.4f, 0.006f, 0.08f), mStripe, g, false);
+            Cube("Skirt_Back", new Vector3(xc, y + 0.06f, ZR + 0.01f), new Vector3(len, 0.12f, 0.02f), mDark, g, false);
+
+            // ceiling lights along the hallway
+            int n = Mathf.Max(3, Mathf.RoundToInt(len / 5.5f));
+            for (int i = 0; i < n; i++)
+            {
+                float x = x0 + (i + 0.5f) * len / n;
+                CeilingPanel(g, "Light_" + i, new Vector3(x, y + HALL_H, ZH), new Vector2(1.0f, 0.5f), mFrame, mLight, new Color(1f, 0.97f, 0.93f), 1.9f, 6.5f, false);
+            }
+
+            // the stairs door (sliding into the wall towards -x), its lamp and its sign (read from the hallway)
+            var sg = Group("StairsDoor", g);
+            sg.position = new Vector3(XA, y, ZF - T * 0.5f);
+            var panel = DoorFrameAndPanel(sg, GATE_W, GATE_H, T + 0.12f);
+            var lamp = Sphere("Lamp", new Vector3(GATE_W * 0.5f + 0.2f, GATE_H + 0.12f, -T * 0.5f - 0.05f), 0.08f, mRed, sg);
+            Cube("Lamp_Base", new Vector3(GATE_W * 0.5f + 0.2f, GATE_H + 0.12f, -T * 0.5f - 0.01f), new Vector3(0.13f, 0.13f, 0.02f), mFrame, sg, false);
+            var sign = Group("Sign", sg);
+            sign.localPosition = new Vector3(0f, GATE_H + 0.42f, -T * 0.5f - 0.02f);
+            bool ground = k == 4;
+            Cube("Plate", Vector3.zero, new Vector3(2.1f, 0.42f, 0.03f), ground ? mExit : mSign, sign, false);
+            Text("Text", sign, new Vector3(0f, 0.05f, -0.018f), new Vector2(2.0f, 0.2f), ground ? "EXIT  ·  STREET" : "STAIRS DOWN  ↓",
                  Color.white, TextAlignmentOptions.Center, true);
-            Text("Name", sign, new Vector3(0f, -0.12f, -0.018f), new Vector2(w + 0.5f, 0.11f), p.roomName.ToUpperInvariant(),
-                 new Color(0.85f, 0.92f, 1f), TextAlignmentOptions.Center, true);
+            Text("Name", sign, new Vector3(0f, -0.12f, -0.018f), new Vector2(2.0f, 0.11f),
+                 ground ? "OPENS AFTER ROOM 3" : $"TO FLOOR {k + 2}  ·  OPENS AFTER ROOM 3", new Color(0.88f, 0.94f, 1f), TextAlignmentOptions.Center, true);
+            stairsGate = sg.gameObject.AddComponent<RoomGate>();
+            stairsGate.panel = panel;
+            stairsGate.openOffset = new Vector3(-(GATE_W + 0.06f), 0f, 0f);
+            stairsGate.inward = Vector3.forward;
+            stairsGate.closeBehind = false;
+            stairsGate.lamp = lamp.GetComponent<Renderer>();
+            stairsGate.lockedMessage = ground ? "Locked.  The street door opens after all three rooms of this floor."
+                                              : "Locked.  The stairs open after all three rooms of this floor.";
 
-            var ed = g.gameObject.AddComponent<EntranceDoor>();
-            ed.panel = panel;
-            ed.openOffset = new Vector3(w + 0.06f, 0f, 0f);
-            ed.inward = Vector3.back;
+            // floor plan on the front wall, between the two doors' signs: which room is which
+            var plan = Group("FloorPlan", g);
+            plan.position = new Vector3(XA - 2.6f, y + 1.55f, ZF - T - 0.02f);
+            Cube("Board", Vector3.zero, new Vector3(2.4f, 1.0f, 0.03f), mDark, plan, false);
+            Text("Title", plan, new Vector3(0f, 0.33f, -0.018f), new Vector2(2.2f, 0.18f), $"FLOOR {k + 1}  ·  {GuideNpc.AlgorithmName(k + 1).ToUpperInvariant()}",
+                 Color.white, TextAlignmentOptions.Center, true);
+            Text("Rooms", plan, new Vector3(0f, -0.08f, -0.018f), new Vector2(2.2f, 0.56f),
+                 "<color=#7FE0A0>ROOM 1  best case</color>\n<color=#9CC4FF>ROOM 2  average case</color>\n<color=#FF9C8C>ROOM 3  worst case</color>",
+                 Color.white, TextAlignmentOptions.Center, false);
+
+            // the door from the stairs above (stands open while you come down, shuts once you're in the hallway)
+            towerDoor = null;
+            if (k > 0)
+            {
+                var eg = Group("DoorFromStairs", g);
+                eg.position = new Vector3(EntranceX, y, ZF - T * 0.5f);
+                float w = EntranceW, h = EntranceH;
+                var ep = DoorFrameAndPanel(eg, w, h, T + 0.12f);
+                var es = Group("FloorSign", eg);
+                es.localPosition = new Vector3(0f, h + 0.42f, T * 0.5f + 0.02f);
+                es.localRotation = Quaternion.Euler(0f, 180f, 0f);
+                Cube("Plate", Vector3.zero, new Vector3(w + 0.8f, 0.42f, 0.03f), mSign, es, false);
+                Text("Text", es, new Vector3(0f, 0.03f, -0.018f), new Vector2(w + 0.7f, 0.22f), $"FLOOR {k + 1}", Color.white, TextAlignmentOptions.Center, true);
+                Text("Name", es, new Vector3(0f, -0.12f, -0.018f), new Vector2(w + 0.7f, 0.11f), GuideNpc.AlgorithmName(k + 1).ToUpperInvariant(),
+                     new Color(0.85f, 0.92f, 1f), TextAlignmentOptions.Center, true);
+                towerDoor = eg.gameObject.AddComponent<EntranceDoor>();
+                towerDoor.panel = ep;
+                towerDoor.openOffset = new Vector3(w + 0.06f, 0f, 0f);
+                towerDoor.inward = Vector3.back;
+            }
+        }
+
+        /// A wall along x (thickness T, centred on z) from x0 to x1 and y0 to y1, with door holes from yFloor up.
+        static void FrontWall(Transform g, float x0, float x1, float y0, float y1, float yFloor, float z, List<(float c, float w, float h)> holes)
+        {
+            var wall = Group("Wall_Front", g);
+            float cursor = x0;
+            int n = 0;
+            foreach (var h in holes.OrderBy(h => h.c))
+            {
+                float a = h.c - h.w * 0.5f, b = h.c + h.w * 0.5f;
+                if (a > cursor + 0.001f) Cube("Seg_" + n, new Vector3((cursor + a) * 0.5f, (y0 + y1) * 0.5f, z), new Vector3(a - cursor, y1 - y0, T), mHallWall, wall);
+                if (yFloor > y0 + 0.001f) Cube("Below_" + n, new Vector3(h.c, (y0 + yFloor) * 0.5f, z), new Vector3(h.w, yFloor - y0, T), mHallWall, wall);
+                float top = yFloor + h.h;
+                Cube("Above_" + n, new Vector3(h.c, (top + y1) * 0.5f, z), new Vector3(h.w, y1 - top, T), mHallWall, wall);
+                cursor = b;
+                n++;
+            }
+            if (x1 > cursor + 0.001f) Cube("Seg_" + n, new Vector3((cursor + x1) * 0.5f, (y0 + y1) * 0.5f, z), new Vector3(x1 - cursor, y1 - y0, T), mHallWall, wall);
         }
 
         // ============================================================ stair tower
 
-        /// Walls, roof, ground, the wall between the two flights, the far wall with its windows, and fillers where
-        /// a floor's front wall does not reach (floor 1 is narrower than the tower; small gaps between storeys).
-        static void TowerShell(Transform t, FloorParts[] parts)
+        /// Walls, roof, ground, the wall between the two flights and the far wall with its windows.
+        /// (The hallways' front walls close the tower on the building side.)
+        static void TowerShell(Transform t)
         {
             var g = Group("Shell", t);
             float x0 = LA0 - T, x1 = LB1 + T, w = x1 - x0, xc = (x0 + x1) * 0.5f;
@@ -272,24 +488,6 @@ namespace SortOrStayEditor
             }
             holes.Add((XA - 0.6f, XA + 1.1f, LevelY[0] + 0.9f, LevelY[0] + 2.4f, true));
             FarWall(g, holes, x0, x1);
-
-            // fillers in the plane of the floors' front walls (z' from -T to 0)
-            var fill = Group("Fillers", g);
-            float zf = -T * 0.5f;
-            for (int k = 0; k < 5; k++)
-            {
-                var p = parts[k];
-                float y0 = LevelY[k] - T, y1 = LevelY[k] + p.height + T;
-                float rx = p.width * 0.5f + T;
-                if (x1 > rx) Cube("Side_" + k, new Vector3((rx + x1) * 0.5f, (y0 + y1) * 0.5f, zf), new Vector3(x1 - rx, y1 - y0, T), mWall, fill);
-                if (x0 < -rx) Cube("SideL_" + k, new Vector3((x0 - rx) * 0.5f, (y0 + y1) * 0.5f, zf), new Vector3(-rx - x0, y1 - y0, T), mWall, fill);
-                if (k > 0)
-                {
-                    float gapTop = LevelY[k - 1] - T;                 // underside of the floor above
-                    if (gapTop - y1 > 0.005f)
-                        Cube("Gap_" + k, new Vector3(xc, (y1 + gapTop) * 0.5f, zf), new Vector3(w, gapTop - y1, T), mWall, fill);
-                }
-            }
         }
 
         static void FarWall(Transform g, List<(float x0, float x1, float y0, float y1, bool glass)> holes, float x0, float x1)
@@ -340,7 +538,7 @@ namespace SortOrStayEditor
                 if (i < STEPS - 1) Cube("NoseB_" + i, new Vector3(XB, top + 0.003f, z1 - GOING + 0.03f), new Vector3(LANE - 0.1f, 0.006f, 0.05f), mNosing, g, false);
             }
 
-            // landing outside the next floor's entrance (lane B); the ground floor stands on the tower's ground slab
+            // landing outside the next floor's hallway door (lane B); the ground floor stands on the tower's ground slab
             if (yBot > 0.01f) Cube("Landing_Bottom", new Vector3(XB, yBot - 0.125f, LAND * 0.5f), new Vector3(LANE, 0.25f, LAND), mFloorTile, g);
 
             // handrails on both sides of each flight
@@ -357,7 +555,7 @@ namespace SortOrStayEditor
 
             // signs: hanging over the top of flight A (read from the door), on the far wall at the half-landing,
             // and big storey numbers on the side walls
-            string next = $"FLOOR {below.number}  ·  {below.roomName.ToUpperInvariant()}";
+            string next = $"FLOOR {below.number}  ·  {GuideNpc.AlgorithmName(below.number).ToUpperInvariant()}";
             var s1 = Group("Sign_Down", g);
             float signY = yTop + 2.45f;
             s1.localPosition = new Vector3(XA, signY, LAND - 0.1f);
@@ -372,14 +570,14 @@ namespace SortOrStayEditor
             s2.localPosition = new Vector3(XB, mid + 1.9f, FAR - 0.02f);
             Cube("Plate", Vector3.zero, new Vector3(LANE - 0.2f, 0.46f, 0.03f), mSign, s2, false);
             Text("Text", s2, new Vector3(0f, 0.07f, -0.018f), new Vector2(LANE - 0.3f, 0.22f), $"→   FLOOR {below.number}", Color.white, TextAlignmentOptions.Center, true);
-            Text("Name", s2, new Vector3(0f, -0.13f, -0.018f), new Vector2(LANE - 0.3f, 0.12f), below.roomName.ToUpperInvariant(),
+            Text("Name", s2, new Vector3(0f, -0.13f, -0.018f), new Vector2(LANE - 0.3f, 0.12f), GuideNpc.AlgorithmName(below.number).ToUpperInvariant() + "  ·  3 ROOMS",
                  new Color(0.85f, 0.92f, 1f), TextAlignmentOptions.Center, true);
 
             StoreyNumber(g, $"F{k + 1}", new Vector3(LA0 + 0.01f, yTop + 1.7f, LAND * 0.5f), -90f);   // read from lane A
             StoreyNumber(g, $"F{k + 2}", new Vector3(LB1 - 0.01f, yBot + 1.7f, LAND * 0.5f), 90f);    // read from lane B
         }
 
-        /// Ground floor: the vault door opens into lane A under the last stairs; the corridor ends at the street door.
+        /// Ground floor: the hallway door opens into lane A under the last stairs; the corridor ends at the street door.
         static void ExitCorridor(Transform t)
         {
             var g = Group("ExitCorridor", t);
@@ -408,28 +606,32 @@ namespace SortOrStayEditor
             trig.AddComponent<ExitTrigger>().manager = lm;
         }
 
-        /// Outside the street door: pavement, kerb, road, two street lamps, a bench and the building's front.
-        static void Street(Transform building)
+        /// Outside the street door: pavement, kerb, road, street lamps, a bench and the building's front.
+        static void Street(Transform building, float bx0, float bx1)
         {
             var g = Group("Street", building);
             float zf = ZF + FAR + T;                  // outer face of the far wall
-            Cube("Pavement", new Vector3(1.5f, -0.06f, zf + 3.5f), new Vector3(24f, 0.12f, 7f), mPavement, g);
-            Cube("Kerb", new Vector3(1.5f, -0.02f, zf + 7.1f), new Vector3(24f, 0.16f, 0.25f), mKerb, g);
-            Cube("Road", new Vector3(1.5f, -0.16f, zf + 12f), new Vector3(30f, 0.12f, 9.5f), mRoad, g);
-            for (int i = 0; i < 6; i++)
-                Cube("RoadLine_" + i, new Vector3(-9f + i * 4.4f, -0.095f, zf + 12f), new Vector3(2.2f, 0.01f, 0.14f), mKerb, g, false);
+            float sx0 = bx0 - 6f, sx1 = bx1 + 6f, sxc = (sx0 + sx1) * 0.5f, sw = sx1 - sx0;
+            Cube("Pavement", new Vector3(sxc, -0.06f, zf + 3.5f), new Vector3(sw, 0.12f, 7f), mPavement, g);
+            Cube("Kerb", new Vector3(sxc, -0.02f, zf + 7.1f), new Vector3(sw, 0.16f, 0.25f), mKerb, g);
+            Cube("Road", new Vector3(sxc, -0.16f, zf + 12f), new Vector3(sw + 6f, 0.12f, 9.5f), mRoad, g);
+            int lines = Mathf.CeilToInt(sw / 4.4f);
+            for (int i = 0; i < lines; i++)
+                Cube("RoadLine_" + i, new Vector3(sx0 + 1.1f + i * 4.4f, -0.095f, zf + 12f), new Vector3(2.2f, 0.01f, 0.14f), mKerb, g, false);
 
-            // the building's front either side of the stair tower
-            float hb = TOP + T;
-            Cube("Facade_L", new Vector3(-6.3f, hb * 0.5f - 0.2f, zf - T * 0.5f), new Vector3(10f, hb, T), mFacade, g);
-            Cube("Facade_R", new Vector3(9.2f, hb * 0.5f - 0.2f, zf - T * 0.5f), new Vector3(10f, hb, T), mFacade, g);
-            Cube("Facade_Base", new Vector3(1.5f, 0.3f, zf + 0.04f), new Vector3(30f, 0.6f, 0.06f), mDark, g, false);
+            // the building's front either side of the stair tower, and its sides back to the hallways
+            float hb = TOP + T, tx0 = LA0 - T, tx1 = LB1 + T;
+            Cube("Facade_L", new Vector3((bx0 + tx0) * 0.5f, hb * 0.5f - 0.2f, zf - T * 0.5f), new Vector3(tx0 - bx0, hb, T), mFacade, g);
+            Cube("Facade_R", new Vector3((tx1 + bx1) * 0.5f, hb * 0.5f - 0.2f, zf - T * 0.5f), new Vector3(bx1 - tx1, hb, T), mFacade, g);
+            Cube("Facade_SideL", new Vector3(bx0 + T * 0.5f, hb * 0.5f - 0.2f, (ZF + zf) * 0.5f), new Vector3(T, hb, zf - ZF), mFacade, g);
+            Cube("Facade_SideR", new Vector3(bx1 - T * 0.5f, hb * 0.5f - 0.2f, (ZF + zf) * 0.5f), new Vector3(T, hb, zf - ZF), mFacade, g);
+            Cube("Facade_Base", new Vector3((bx0 + bx1) * 0.5f, 0.3f, zf + 0.04f), new Vector3(bx1 - bx0, 0.6f, 0.06f), mDark, g, false);
             var name = Group("BuildingName", g);
-            name.localPosition = new Vector3(-6.3f, 3.2f, zf + 0.02f);
+            name.localPosition = new Vector3(tx1 + Mathf.Min(6f, (bx1 - tx1) * 0.5f), 3.2f, zf + 0.02f);
             name.localRotation = Quaternion.Euler(0f, 180f, 0f);
             Text("Text", name, Vector3.zero, new Vector2(6f, 0.8f), "SORT  OR  STAY", new Color(0.20f, 0.20f, 0.22f), TextAlignmentOptions.Center, true);
 
-            foreach (float x in new[] { -3.5f, 6.5f })
+            for (float x = -3.5f; x < bx1 + 2f; x += 10f)
             {
                 var l = Group("StreetLamp", g);
                 l.localPosition = new Vector3(x, 0f, zf + 6.5f);
@@ -438,7 +640,7 @@ namespace SortOrStayEditor
                 Cube("Head", new Vector3(0f, 3.88f, -0.7f), new Vector3(0.3f, 0.12f, 0.45f), mLamp, l, false);
             }
             var b = Group("Bench", g);
-            b.localPosition = new Vector3(4.2f, 0f, zf + 4.8f);
+            b.localPosition = new Vector3(4.2f + 4f, 0f, zf + 4.8f);
             Cube("Seat", new Vector3(0f, 0.45f, 0f), new Vector3(1.6f, 0.06f, 0.42f), mBench, b);
             Cube("Back", new Vector3(0f, 0.75f, 0.19f), new Vector3(1.6f, 0.4f, 0.05f), mBench, b, false);
             Cube("Leg_L", new Vector3(-0.7f, 0.22f, 0f), new Vector3(0.06f, 0.44f, 0.4f), mRail, b, false);

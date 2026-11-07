@@ -25,7 +25,10 @@ namespace SortOrStayEditor
         const string TMP_FONT = "Assets/TextMesh Pro/Resources/Fonts & Materials/LiberationSans SDF.asset";
 
         // room, in metres
-        const float W = 6f, D = 7f, H = 3f, T = 0.2f;        // width (x), depth (z), height, wall thickness
+        const float D = 7f, H = 3f, T = 0.2f;                 // depth (z), height, wall thickness
+        /// Width (x). In the building the room is wider: the hallway doorway needs a place right of the key rack.
+        static float W => Kit.BuildingMode ? 8.8f : 6f;
+        const float ENT_X = 3.65f, ENT_W = 1.1f;              // the doorway from the hallway (building only)
         const float DOOR_W = 1.2f, DOOR_H = 2.3f;
         const float FRONT = D * 0.5f;                         // inner face of the front (door) wall
         const float RACK_X = 1.85f;
@@ -159,7 +162,8 @@ namespace SortOrStayEditor
                 title = "FLOOR 1  ·  THE LOCKED ROOM", roomName = "The Locked Room",
                 objective = IntroSequence.DefaultObjective,
                 lines = new[] { "Floor 1.  The Locked Room." },
-                width = W, depth = D, height = H, spawn = SPAWN
+                width = W, depth = D, height = H, spawn = SPAWN,
+                entranceX = ENT_X, entranceW = ENT_W, entranceSlide = -1f
             };
         }
 
@@ -258,20 +262,33 @@ namespace SortOrStayEditor
             Cube("Wall_Right", new Vector3(hw + T * 0.5f, H * 0.5f, 0f), new Vector3(T, H, D + 2f * T), mWall, room);
             Cube("Wall_Back", new Vector3(0f, H * 0.5f, -hd - T * 0.5f), new Vector3(W + 2f * T, H, T), mWall, room);
 
-            // front wall, split around the door opening
+            // front wall, split around the door opening (and, in the building, the doorway from the hallway)
             float segW = (W + 2f * T - DOOR_W) * 0.5f;
             float segX = DOOR_W * 0.5f + segW * 0.5f;
             float zf = hd + T * 0.5f;
-            Cube("Wall_Front_L", new Vector3(-segX, H * 0.5f, zf), new Vector3(segW, H, T), mWall, room);
-            Cube("Wall_Front_R", new Vector3(segX, H * 0.5f, zf), new Vector3(segW, H, T), mWall, room);
-            Cube("Wall_Front_Top", new Vector3(0f, (DOOR_H + H) * 0.5f, zf), new Vector3(DOOR_W, H - DOOR_H, T), mWall, room);
+            if (Kit.BuildingMode)
+                Kit.WallAlongX(room, "Wall_Front", zf, -hw, hw, H, T, mWall,
+                               new Kit.Hole(0f, DOOR_W, 0f, DOOR_H), new Kit.Hole(ENT_X, ENT_W, 0f, Kit.EntranceH));
+            else
+            {
+                Cube("Wall_Front_L", new Vector3(-segX, H * 0.5f, zf), new Vector3(segW, H, T), mWall, room);
+                Cube("Wall_Front_R", new Vector3(segX, H * 0.5f, zf), new Vector3(segW, H, T), mWall, room);
+                Cube("Wall_Front_Top", new Vector3(0f, (DOOR_H + H) * 0.5f, zf), new Vector3(DOOR_W, H - DOOR_H, T), mWall, room);
+            }
 
             // dark skirting along the walls
             Cube("Skirt_L", new Vector3(-hw + 0.01f, 0.06f, 0f), new Vector3(0.02f, 0.12f, D), mDark, room, false);
             Cube("Skirt_R", new Vector3(hw - 0.01f, 0.06f, 0f), new Vector3(0.02f, 0.12f, D), mDark, room, false);
             Cube("Skirt_B", new Vector3(0f, 0.06f, -hd + 0.01f), new Vector3(W, 0.12f, 0.02f), mDark, room, false);
             Cube("Skirt_FL", new Vector3(-segX, 0.06f, hd - 0.01f), new Vector3(segW - 2f * T, 0.12f, 0.02f), mDark, room, false);
-            Cube("Skirt_FR", new Vector3(segX, 0.06f, hd - 0.01f), new Vector3(segW - 2f * T, 0.12f, 0.02f), mDark, room, false);
+            if (!Kit.BuildingMode)
+                Cube("Skirt_FR", new Vector3(segX, 0.06f, hd - 0.01f), new Vector3(segW - 2f * T, 0.12f, 0.02f), mDark, room, false);
+            else
+            {
+                float a0 = DOOR_W * 0.5f, a1 = ENT_X - ENT_W * 0.5f, b0 = ENT_X + ENT_W * 0.5f;
+                Cube("Skirt_FR_A", new Vector3((a0 + a1) * 0.5f, 0.06f, hd - 0.01f), new Vector3(a1 - a0, 0.12f, 0.02f), mDark, room, false);
+                if (hw > b0) Cube("Skirt_FR_B", new Vector3((b0 + hw) * 0.5f, 0.06f, hd - 0.01f), new Vector3(hw - b0, 0.12f, 0.02f), mDark, room, false);
+            }
 
             // pipes along the left wall, a vent in the ceiling
             CylZ("Pipe_A", new Vector3(-hw + 0.14f, H - 0.22f, 0f), 0.10f, D, mDark, room);

@@ -17,6 +17,64 @@ namespace SortOrStay
     /// already in place. The display shows the ranges still to do (the recursion stack).
     public class QuickPuzzle : SortPuzzleBase, IAutoPlayable
     {
+        public override string Algorithm => "Quick sort";
+
+        /// Best case: every pivot (the last bar of its range) lands in the middle, so each split halves the work.
+        /// Found by simulating Lomuto partitioning on random orders and keeping the one with the fewest comparisons.
+        protected override int[] BestDeal(int[] sorted)
+        {
+            var v = (int[])sorted.Clone();
+            int[] best = (int[])v.Clone();
+            int bestCmp = int.MaxValue;
+            int target = MinComparisons(v.Length);
+            for (int t = 0; t < 6000 && bestCmp > target; t++)
+            {
+                Shuffle(v);
+                int c = LomutoComparisons(v);
+                if (c < bestCmp) { bestCmp = c; best = (int[])v.Clone(); }
+            }
+            return best;
+        }
+
+        /// Worst case for a last-element pivot: already sorted. Every pivot is the biggest bar: n(n-1)/2 comparisons.
+        protected override int[] WorstDeal(int[] sorted) => (int[])sorted.Clone();
+
+        protected override bool AverageOk(int[] v) => MiddlingPivot(v);
+
+        /// Comparisons quick sort (Lomuto, last element as pivot) makes on this order.
+        public static int LomutoComparisons(int[] input)
+        {
+            var a = (int[])input.Clone();
+            int count = 0;
+            var stack = new Stack<Vector2Int>();
+            stack.Push(new Vector2Int(0, a.Length - 1));
+            while (stack.Count > 0)
+            {
+                var r = stack.Pop();
+                if (r.y <= r.x) continue;
+                int p = a[r.y], w = r.x;
+                for (int i = r.x; i < r.y; i++)
+                {
+                    count++;
+                    if (a[i] < p) { (a[i], a[w]) = (a[w], a[i]); w++; }
+                }
+                (a[w], a[r.y]) = (a[r.y], a[w]);
+                stack.Push(new Vector2Int(r.x, w - 1));
+                stack.Push(new Vector2Int(w + 1, r.y));
+            }
+            return count;
+        }
+
+        /// The fewest comparisons possible: (n-1) plus the best split of what is left.
+        public static int MinComparisons(int n)
+        {
+            if (n <= 1) return 0;
+            int best = int.MaxValue;
+            for (int left = 0; left < n; left++)
+                best = Mathf.Min(best, MinComparisons(left) + MinComparisons(n - 1 - left));
+            return n - 1 + best;
+        }
+
         [Header("Deal")]
         public int[] valuePool = { 11, 14, 19, 23, 27, 31, 36, 42, 47, 53, 58, 64, 69, 75, 81, 88, 93, 97 };
         public int minOutOfOrderPairs = 11;
@@ -94,6 +152,7 @@ namespace SortOrStay
             int guard = 0;
             while ((CountInversions(vals) < want || !MiddlingPivot(vals)) && ++guard < 800) vals = Pick(valuePool, n);
 
+            vals = DealFor(vals);
             for (int i = 0; i < n; i++)
             {
                 var b = items[i];
@@ -427,7 +486,7 @@ namespace SortOrStay
                 var pad = items[cur].value < pivot.value ? smallerPad : biggerPad;
                 if (pad != null) StartCoroutine(PulsePad(pad.transform));
             }
-            if (GameUI.Instance != null) GameUI.Instance.Flash(Hint(), SortItem.HintColor, 4.5f);
+            ShowHint(Hint(), 4.5f);
             Refresh();
         }
 
@@ -542,10 +601,10 @@ namespace SortOrStay
                 }
             }
             yield return new WaitForSeconds(0.2f);
-            if (door != null) door.Unlock();
+            UnlockDoor();
 
             float seconds = Time.time - startTime;
-            GameState.Instance.Record(new LevelResult
+            Record(new LevelResult
             {
                 level = 5, algorithm = "Quick sort",
                 comparisons = comparisons, swaps = swaps, minSwaps = 0,
@@ -555,7 +614,7 @@ namespace SortOrStay
             Refresh();
 
             var ui = GameUI.Instance;
-            if (ui != null) ui.SetObjective("The vault is open.  Walk out:  you're free.");
+            if (ui != null) ui.SetObjective(AfterSolveObjective("The vault is open.  Walk out:  you're free."));
             yield return new WaitForSeconds(2.2f);
 
             int n = N;
@@ -572,7 +631,7 @@ namespace SortOrStay
                 $"A pivot that is the smallest or the biggest leaves one side empty:  on bars that are already in order it falls to n(n−1)/2 = <b>{n * (n - 1) / 2}</b>.  " +
                 "That's why real libraries choose their pivot with care." +
                 compare;
-            if (ui != null) ui.ShowPopup("THAT'S QUICK SORT", body, "Click or press E to close  ·  then walk out through the vault door");
+            if (ui != null) ui.ShowPopup("THAT'S QUICK SORT", body, DebriefFooter("Click or press E to close  ·  then walk out through the vault door"));
             busy = false;
         }
 

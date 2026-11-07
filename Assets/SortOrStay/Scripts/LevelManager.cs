@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Linq;
 using System.Text;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -52,9 +53,12 @@ namespace SortOrStay
             {
                 if (levelNumber >= GameState.FloorScenes.Length)
                 {
-                    bool all = GameState.Instance.results.Count >= GameState.FloorScenes.Length;
-                    ui.ShowEndCard(all ? "YOU ESCAPED  ·  ALL 5 FLOORS" : "YOU ESCAPED",
-                                   Scoreboard() + (all ? "\n\nFive floors, five sorting algorithms, one way out."
+                    int floorsDone = GameState.Instance.results.Select(r => r.level).Distinct().Count();
+                    bool all = floorsDone >= GameState.FloorScenes.Length;
+                    bool rooms = GameState.Instance.results.Any(r => r.room > 0);
+                    ui.ShowEndCard(all ? (rooms ? "YOU ESCAPED  ·  5 FLOORS  ·  15 ROOMS" : "YOU ESCAPED  ·  ALL 5 FLOORS") : "YOU ESCAPED",
+                                   Scoreboard() + (all ? (rooms ? "\n\nFive algorithms, each in its best, average and worst case.  One way out."
+                                                                : "\n\nFive floors, five sorting algorithms, one way out.")
                                                        : "\n\nPlay from Floor 1 to see all five algorithms on one scoreboard."),
                                    building ? "R  play the building again from the top      ·      1 - 5  start on a floor"
                                             : "R  play the Vault again      ·      1 - 5  jump to a floor");
@@ -72,6 +76,7 @@ namespace SortOrStay
             if (gs.results.Count == 0) return "You found your way out.";
             var sb = new StringBuilder();
             float total = 0f;
+            if (gs.results.Any(r => r.room > 0)) return RoomScoreboard(gs);
             foreach (var r in gs.results)
             {
                 total += r.seconds;
@@ -81,6 +86,36 @@ namespace SortOrStay
             }
             sb.Append($"\nTotal time  <b>{GameState.Clock(total)}</b>");
             return sb.ToString();
+        }
+
+        /// The building's scoreboard: one block per floor, comparisons in each of its three rooms (best, average, worst).
+        static string RoomScoreboard(GameState gs)
+        {
+            var sb = new StringBuilder();
+            float total = 0f;
+            foreach (var g in gs.results.GroupBy(r => r.level).OrderBy(g => g.Key))
+            {
+                var rs = g.OrderBy(r => r.room).ToList();
+                float secs = rs.Sum(r => r.seconds);
+                total += secs;
+                int hints = rs.Sum(r => r.hints), slips = rs.Sum(r => r.mistakes), qs = rs.Sum(r => r.quizSlips);
+                var cases = string.Join("   ·   ", rs.Select(r => $"{CaseShort(r.sortCase)} <b>{r.comparisons}</b>"));
+                sb.Append($"<b>Floor {g.Key}  ·  {rs[0].algorithm}</b>      comparisons:   {cases}\n");
+                sb.Append($"      {rs.Count}/3 rooms  ·  {hints} hints  ·  {slips} slips  ·  {qs} wrong answers  ·  {GameState.Clock(secs)}\n");
+            }
+            sb.Append($"\nTotal time  <b>{GameState.Clock(total)}</b>");
+            return sb.ToString();
+        }
+
+        static string CaseShort(SortCase c)
+        {
+            switch (c)
+            {
+                case SortCase.Best: return "best";
+                case SortCase.Average: return "average";
+                case SortCase.Worst: return "worst";
+                default: return "";
+            }
         }
 
         /// Restart this floor (in the building: the floor the player is on; from the end card, the whole building).

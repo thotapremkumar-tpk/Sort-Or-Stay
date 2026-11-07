@@ -192,12 +192,13 @@ namespace SortOrStayEditor
             WallAlongZ(room, "Wall_Left", -HW - T * 0.5f, -HD - T, HD + T, H, T, mWall);
             var windows = new List<Hole>();
             float[] wz = { -3.3f, -1.1f, 1.1f, 3.3f };
-            foreach (float z in wz) windows.Add(new Hole(z, 1.6f, 2.35f, 3.85f));
+            if (!NoSideWindows) foreach (float z in wz) windows.Add(new Hole(z, 1.6f, 2.35f, 3.85f));     // no windows onto the next room
             WallAlongZ(room, "Wall_Right", HW + T * 0.5f, -HD - T, HD + T, H, T, mWall, windows.ToArray());
             WallAlongX(room, "Wall_Back", -HD - T * 0.5f, -HW, HW, H, T, mWall);
             WallAlongX(room, "Wall_Front", HD + T * 0.5f, -HW, HW, H, T, mWall, FrontHoles(new Hole(0f, DOOR_W, 0f, DOOR_H)));
-            for (int i = 0; i < wz.Length; i++)
-                WindowZ(room, "Window_" + i, HW + T * 0.5f, wz[i], 1.6f, 2.35f, 3.85f, T, mFrame, mGlass, mWhite);
+            if (!NoSideWindows)
+                for (int i = 0; i < wz.Length; i++)
+                    WindowZ(room, "Window_" + i, HW + T * 0.5f, wz[i], 1.6f, 2.35f, 3.85f, T, mFrame, mGlass, mWhite);
 
             // painted band along the lower walls, and a dark skirting
             float bh = 1.1f;

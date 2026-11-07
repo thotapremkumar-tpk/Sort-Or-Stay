@@ -11,6 +11,8 @@ namespace SortOrStay
     [DefaultExecutionOrder(110)]           // LateUpdate after HandReach, so a carried key follows the final hand pose
     public class BubblePuzzle : SortPuzzleBase, IAutoPlayable
     {
+        public override string Algorithm => "Bubble sort";
+
         [Header("Deal")]
         public bool useFixedOrder = false;
         public int[] fixedOrder = { 5, 2, 6, 1, 4, 3 };
@@ -113,6 +115,7 @@ namespace SortOrStay
                 do { Shuffle(vals); } while (CountInversions(vals) < want && ++guard < 500);
             }
 
+            vals = DealFor(vals);
             for (int i = 0; i < n; i++)
             {
                 items[i].puzzle = this;
@@ -423,7 +426,7 @@ namespace SortOrStay
             items[cmp + 1].Flash(SortItem.HintColor, 2.2f);
             items[cmp].Kick(30f);
             items[cmp + 1].Kick(-30f);
-            if (GameUI.Instance != null) GameUI.Instance.Flash(Hint(), SortItem.HintColor, 4f);
+            ShowHint(Hint(), 4f);
             Refresh();
         }
 
@@ -462,10 +465,10 @@ namespace SortOrStay
             }
             yield return new WaitForSeconds(0.3f);
 
-            if (door != null) door.Unlock();
+            UnlockDoor();
             float seconds = Time.time - startTime;
             int passes = pass + (cmp > 0 ? 1 : 0);
-            GameState.Instance.Record(new LevelResult
+            Record(new LevelResult
             {
                 level = 1, algorithm = "Bubble sort",
                 comparisons = comparisons, swaps = swaps, minSwaps = startInversions,
@@ -475,7 +478,7 @@ namespace SortOrStay
             Refresh();
 
             var ui = GameUI.Instance;
-            if (ui != null) ui.SetObjective("The door is open.  Walk through it.");
+            if (ui != null) ui.SetObjective(AfterSolveObjective("The door is open.  Walk through it."));
             yield return new WaitForSeconds(1.4f);
 
             int n = items.Count;
@@ -490,7 +493,7 @@ namespace SortOrStay
                 $"Why {startInversions} swaps?  The keys started with {startInversions} out-of-order pairs and every neighbour swap fixes exactly one." + extra +
                 $"\n\nA computer running bubble sort on {n} keys makes up to {n - 1} passes and {n * (n - 1) / 2} comparisons, n(n-1)/2, " +
                 "and one last pass with no swaps to know it is done.  Simple, but slow as the list grows.";
-            if (ui != null) ui.ShowPopup("THAT'S BUBBLE SORT", body, "Click or press E to close  ·  then walk through the door");
+            if (ui != null) ui.ShowPopup("THAT'S BUBBLE SORT", body, DebriefFooter("Click or press E to close  ·  then walk through the door"));
             busy = false;
         }
 
