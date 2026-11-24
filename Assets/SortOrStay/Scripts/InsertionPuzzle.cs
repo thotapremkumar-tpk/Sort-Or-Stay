@@ -465,8 +465,8 @@ namespace SortOrStay
             {
                 string status = Solved ? "<color=#5dff7a>UNLOCKED</color>" : "<color=#ff6a5a>LOCKED</color>";
                 terminal.SetText(
-                    "<b>CATALOGUE</b>   FLOOR 3\n" +
-                    "> Insertion sort the shelf:\n   pull a book out, shift\n   bigger books right, place it.\n\n" +
+                    "<b>INSERTION SORT</b>   FLOOR 3\n" +
+                    "Pull out the next book. Shift larger\nbooks right, then insert it in the gap.\n\n" +
                     $"DOORS   {status}\n" +
                     $"{phase}   SHIFTS {shifts}\n" +
                     $"{step}\n\n" +

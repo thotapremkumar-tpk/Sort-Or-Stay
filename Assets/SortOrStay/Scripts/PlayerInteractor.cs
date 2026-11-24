@@ -8,9 +8,8 @@ namespace SortOrStay
     /// Point-and-click: whatever is under the mouse cursor. Mouse-look: whatever the crosshair points at.
     /// Picking is forgiving: if the ray lands on something that can't be used (a shelf, a scale plate),
     /// the nearest usable thing within a few centimetres is chosen instead. The chosen thing gets a bouncing
-    /// marker above it. Using a sorting object (key, crate, book, block, bar, button) that is a little too far away
-    /// makes the avatar walk over to it first. Clicking the floor, the stairs or a door never moves the avatar:
-    /// walking is the player's own (W A S D / arrow keys). Puzzles also call Use() for number-key shortcuts.
+    /// marker above it. Second-person view extends the reach for puzzle controls.
+    /// Puzzles also call Use() for number-key shortcuts.
     public class PlayerInteractor : MonoBehaviour
     {
         public static PlayerInteractor Instance { get; private set; }
@@ -21,6 +20,7 @@ namespace SortOrStay
         public float useDistance = 1.7f;         // flat distance at which a click acts at once
         public float approachDistance = 1.05f;   // otherwise walk until this close
         public float pickRadius = 0.2f;          // "near miss" radius
+        const float SecondPersonPuzzleReach = 3f;
 
         public IInteractable Current { get; private set; }
 
@@ -60,7 +60,7 @@ namespace SortOrStay
                 {
                     string p = it.Prompt;
                     float d = Flat(transform.position, ClosestPoint(col, transform.position));
-                    float use = it is IHandReach hr && hr.ReachDistance > 0f ? hr.ReachDistance : useDistance;
+                    float use = InteractionDistance(it);
                     if (!string.IsNullOrEmpty(p) && d > use && !IsDoor(it)) p += "   (too far:  walk up to it)";
                     ui.prompt = p;
                 }
@@ -80,6 +80,15 @@ namespace SortOrStay
 
         /// Doors are only tried from where the player stands: a click on a door never walks the avatar to it.
         static bool IsDoor(IInteractable it) => it is Door || it is RoomGate;
+
+        float InteractionDistance(IInteractable it)
+        {
+            float reach = it is IHandReach hand && hand.ReachDistance > 0f ? hand.ReachDistance : useDistance;
+            if (!WalkOver && controller != null && controller.view == PlayerController.View.Second &&
+                (it is SortItem || it is InsertSlot || it is PushButton || it is Terminal))
+                return Mathf.Max(reach, SecondPersonPuzzleReach);
+            return reach;
+        }
 
         /// A click never walks the avatar anywhere: the player walks (W A S D) and uses what is within reach.
         /// (Only the editor's hands-on play-test walks over to things by itself.)
@@ -144,8 +153,8 @@ namespace SortOrStay
         public void Use(IInteractable it, Collider col)
         {
             if (it == null || col == null || !it.CanInteract) return;
-            float use = useDistance, approach = approachDistance;
-            if (it is IHandReach hr && hr.ReachDistance > 0f) { use = hr.ReachDistance; approach = Mathf.Min(approach, hr.ReachDistance * 0.75f); }
+            float use = InteractionDistance(it), approach = approachDistance;
+            if (it is IHandReach hr && hr.ReachDistance > 0f) approach = Mathf.Min(approach, hr.ReachDistance * 0.75f);
             Vector3 p = ClosestPoint(col, transform.position);
             if (IsDoor(it))
             {

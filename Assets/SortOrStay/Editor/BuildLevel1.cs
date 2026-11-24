@@ -38,7 +38,7 @@ namespace SortOrStayEditor
 
         static readonly Color InkDark = new Color(0.08f, 0.08f, 0.09f);
 
-        static Material mFloor, mWall, mCeil, mSteel, mDark, mTread, mWood, mTag, mSign, mInk, mScreen, mBulb, mLed, mLamp, mHook, mRed, mExit;
+        static Material mFloor, mWall, mCeil, mSteel, mDark, mTread, mWood, mTag, mInk, mScreen, mBulb, mLamp, mHook, mExit;
         static TMP_FontAsset font;
 
         enum Anchor { Bottom, Top, Center }
@@ -139,11 +139,10 @@ namespace SortOrStayEditor
 
             var root = new GameObject("Level1_LockedRoom").transform;
             BuildRoom(root);
-            Door door = BuildDoor(root, out Renderer[] leds);
+            Door door = BuildDoor(root);
             Transform[] slots = BuildRack(root);
             List<SortItem> keys = BuildKeys(root, slots);
             Terminal terminal = BuildTerminal(root);
-            BuildSign(root);
             BuildProps(root);
             BuildLights(root);
 
@@ -153,7 +152,6 @@ namespace SortOrStayEditor
             puzzle.items = keys;
             puzzle.door = door;
             puzzle.terminal = terminal;
-            puzzle.slotLeds = leds;
             terminal.puzzle = puzzle;
 
             return new Kit.FloorParts
@@ -180,14 +178,11 @@ namespace SortOrStayEditor
             mWood = Pbr("Rack_Wood", "WoodFloor064", new Color(0.86f, 0.66f, 0.46f), 0.6f, 0.3f, 0f);
 
             mTag = Flat("Key_Tag", new Color(0.93f, 0.90f, 0.82f), 0.2f, 0f);
-            mSign = Flat("Sign_Yellow", new Color(0.95f, 0.78f, 0.15f), 0.35f, 0f);
             mInk = Flat("Ink_Dark", InkDark, 0.3f, 0f);
             mHook = Flat("Hook_Metal", new Color(0.30f, 0.30f, 0.32f), 0.7f, 0.5f);
 
-            mRed = Emissive("Button_Red", new Color(0.75f, 0.08f, 0.06f), new Color(0.9f, 0.1f, 0.06f), 0.6f);
-            mScreen = Emissive("Terminal_Screen", new Color(0.01f, 0.05f, 0.04f), new Color(0.02f, 0.22f, 0.14f), 1f);
+            mScreen = Kit.MonitorScreen("Terminal_Screen");
             mBulb = Emissive("Ceiling_Diffuser", new Color(1f, 0.99f, 0.96f), new Color(1f, 0.97f, 0.92f), 2.6f);
-            mLed = Emissive("Led", new Color(0.05f, 0.05f, 0.05f), Color.black, 0f);
             mLamp = Emissive("Door_Lamp", new Color(1f, 0.12f, 0.08f), new Color(1f, 0.12f, 0.08f), 4f);
             mExit = Emissive("Exit_Green", new Color(0.05f, 0.45f, 0.18f), new Color(0.1f, 0.9f, 0.35f), 1.8f);
         }
@@ -300,7 +295,7 @@ namespace SortOrStayEditor
 
         // ============================================================ door
 
-        static Door BuildDoor(Transform p, out Renderer[] leds)
+        static Door BuildDoor(Transform p)
         {
             var g = Group("Door", p);
             g.localPosition = new Vector3(0f, 0f, FRONT + T * 0.5f);   // centred in the wall's thickness
@@ -326,18 +321,6 @@ namespace SortOrStayEditor
             var lamp = Sphere("StatusLamp", new Vector3(DOOR_W * 0.5f + 0.26f, DOOR_H + 0.02f, face - 0.05f), 0.085f, mLamp, g);
             var lampLight = PointLight("StatusLight", g, g.TransformPoint(new Vector3(DOOR_W * 0.5f + 0.26f, DOOR_H + 0.02f, face - 0.30f)),
                                        new Color(1f, 0.12f, 0.08f), 0.9f, 1.8f, false);
-
-            // slot panel above the door: one LED per hook, lit when that hook holds its final key
-            float py = DOOR_H + 0.38f;
-            Cube("SlotPanel", new Vector3(0f, py, face - 0.015f), new Vector3(0.92f, 0.26f, 0.03f), mDark, g, false);
-            leds = new Renderer[6];
-            for (int i = 0; i < 6; i++)
-            {
-                float x = -0.30f + 0.12f * i;
-                leds[i] = Cube("Led_" + i, new Vector3(x, py - 0.035f, face - 0.035f), new Vector3(0.07f, 0.07f, 0.012f), mLed, g, false).GetComponent<Renderer>();
-            }
-            Text("SlotLabel", g, new Vector3(0f, py + 0.075f, face - 0.032f), new Vector2(0.8f, 0.055f), "KEY ORDER",
-                 new Color(0.85f, 0.85f, 0.82f), TextAlignmentOptions.Center, true);
 
             var door = g.gameObject.AddComponent<Door>();
             door.panel = panel;
@@ -445,34 +428,17 @@ namespace SortOrStayEditor
             Cube("Screen", new Vector3(0f, 1.555f, -0.0715f), new Vector3(0.94f, 0.58f, 0.004f), mScreen, g, false);
             Cube("Screen_Accent", new Vector3(0f, 1.255f, -0.0715f), new Vector3(0.94f, 0.008f, 0.004f), mExit, g, false);
             var txt = Text("ScreenText", g, new Vector3(0f, 1.555f, -0.0745f), new Vector2(0.86f, 0.53f),
-                           "<b>SECURITY TERMINAL</b>   FLOOR 1\n> ORDER UNLOCKS.\n> Arrange the keys from\n   smallest to largest.\n\nSTATUS   LOCKED",
-                           new Color(0.55f, 1f, 0.72f), TextAlignmentOptions.TopLeft, false);
-
-            Cube("Button_Plate", new Vector3(0.36f, 1.05f, -0.01f), new Vector3(0.24f, 0.2f, 0.02f), mDark, g, false);
-            CylZ("Hint_Button", new Vector3(0.36f, 1.065f, -0.035f), 0.085f, 0.035f, mRed, g);
-            Text("Hint_Label", g, new Vector3(0.36f, 0.98f, -0.0205f), new Vector2(0.18f, 0.035f), "HINT",
-                 new Color(0.9f, 0.9f, 0.88f), TextAlignmentOptions.Center, true);
+                           "<b>BUBBLE SORT</b>   FLOOR 1\nSort the keys from smallest to largest.",
+                           Color.white, TextAlignmentOptions.TopLeft, false);
 
             var term = g.gameObject.AddComponent<Terminal>();
             term.screen = txt;
             var bc = g.gameObject.AddComponent<BoxCollider>();
-            bc.center = new Vector3(0f, 1.36f, -0.06f);
-            bc.size = new Vector3(1.08f, 1.02f, 0.14f);
+            bc.center = new Vector3(0f, 1.52f, -0.06f);
+            bc.size = new Vector3(1.06f, 0.74f, 0.14f);
 
             PointLight("TerminalGlow", g, new Vector3(TERM_X, 1.55f, FRONT - 0.45f), new Color(0.35f, 1f, 0.72f), 0.7f, 2.4f, false);
             return term;
-        }
-
-        static void BuildSign(Transform p)
-        {
-            var g = Group("RuleSign", p);
-            g.localPosition = new Vector3(RACK_X, 0f, FRONT);
-            Cube("Edge", new Vector3(0f, 1.0f, -0.008f), new Vector3(1.56f, 0.34f, 0.016f), mInk, g, false);
-            Cube("Plate", new Vector3(0f, 1.0f, -0.018f), new Vector3(1.5f, 0.28f, 0.01f), mSign, g, false);
-            Text("Rule", g, new Vector3(0f, 1.045f, -0.0245f), new Vector2(1.40f, 0.085f), "ONLY NEIGHBOURING KEYS MAY SWAP",
-                 InkDark, TextAlignmentOptions.Center, true);
-            Text("How", g, new Vector3(0f, 0.957f, -0.0245f), new Vector2(1.40f, 0.06f), "Compare the glowing pair: swap if the left key is bigger, else stay.",
-                 InkDark, TextAlignmentOptions.Center, false);
         }
 
         // ============================================================ props + lights

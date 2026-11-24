@@ -395,8 +395,8 @@ namespace SortOrStay
             var lines = new List<(string, Mood)>();
             if (floor == 1)
             {
-                lines.Add(($"Hello!  I'm {displayName}, your guide.  Five floors, one sorting algorithm on each.", Mood.Wave));
-                lines.Add(("Every floor has three rooms:  Room 1 is the algorithm's <b>best case</b>, Room 2 its <b>average case</b>, Room 3 its <b>worst case</b>.  Watch how the work grows.", Mood.Present));
+                lines.Add(($"Hello! I'm {displayName}, your guide. This building has five floors, and each floor teaches a different sorting algorithm.", Mood.Wave));
+                lines.Add(("Each floor has three rooms. Room 1 shows the <b>best case</b>, Room 2 shows the <b>average case</b>, and Room 3 shows the <b>worst case</b>. See how the starting order changes the amount of work you do.", Mood.Present));
                 lines.Add(("Solve a room, answer my three questions about it, and the next room opens.  After Room 3, the stairs open.", Mood.Neutral));
             }
             else lines.Add(($"Welcome to Floor {floor}:  <b>{AlgorithmName(floor)}</b>.", Mood.Wave));
@@ -933,39 +933,45 @@ namespace SortOrStay
         {
             if (convoIdx >= convo.Count) return;
             var line = convo[convoIdx];
-            float pw = Mathf.Min(1200f, W - 80f);
-            float textW = pw - 230f - 40f;
+            const float inset = 26f, gap = 12f, buttonHeight = 48f;
+            float pw = Mathf.Min(1200f, W - 48f);
+            float portraitSize = Mathf.Clamp(pw * 0.15f, 64f, 148f);
+            float textInset = inset + portraitSize + 24f;
+            float textW = pw - textInset - inset;
+            bool compact = textW < 800f;
+            float buttonBlock = compact ? 2f * buttonHeight + gap : buttonHeight;
             float th = sDialog.CalcHeight(new GUIContent(line.text), textW);
-            float ph = Mathf.Max(230f, 70f + th + 80f);
-            Rect r = new Rect((W - pw) * 0.5f, H - 36f - ph, pw, ph);
-            GameUI.Shadow(r);
-            GameUI.Box(r, GameUI.CardSolid);
-            GameUI.Box(new Rect(r.x, r.y, pw, 6f), Blue);
+            bool voiceProblem = GuideVoice.On && GuideVoice.Problem != null;
+            float warningHeight = voiceProblem ? sVoiceNotice.CalcHeight(new GUIContent(GuideVoice.Problem), textW) + gap : 0f;
+            float ph = Mathf.Max(portraitSize + 2f * inset, 66f + th + warningHeight + gap + buttonBlock + inset);
+            Rect r = new Rect((W - pw) * 0.5f, H - 34f - ph, pw, ph);
+            GameUI.GlassPanel(r, 22f);
 
-            Rect pr = new Rect(r.x + 28f, r.y + 28f, 176f, 176f);
-            GameUI.Box(new Rect(pr.x - 3f, pr.y - 3f, pr.width + 6f, pr.height + 6f), Blue);
+            Rect pr = new Rect(r.x + inset, r.y + inset, portraitSize, portraitSize);
+            GameUI.RoundedBox(new Rect(pr.x - 3f, pr.y - 3f, pr.width + 6f, pr.height + 6f), GameUI.GlassAccent, 4f);
             if (portraitRT != null) GUI.DrawTexture(pr, portraitRT, ScaleMode.ScaleAndCrop);
 
-            float x = r.x + 230f;
-            GameUI.Text(new Rect(x, r.y + 24f, textW, 28f), displayName.ToUpperInvariant(), sName, Blue);
-            GameUI.Text(new Rect(r.xMax - 40f - 160f, r.y + 24f, 160f, 28f), $"{convoIdx + 1} / {convo.Count}", sSmall, GameUI.InkSoft);
+            float x = r.x + textInset;
+            GameUI.Text(new Rect(x, r.y + 26f, textW - 68f, 30f), displayName, sDialogName, GameUI.GlassAccent);
+            GameUI.Text(new Rect(r.xMax - inset - 60f, r.y + 26f, 60f, 30f), $"{convoIdx + 1} / {convo.Count}", sSmall, GameUI.GlassText);
             int shown = Mathf.Clamp(TypedChars(line.text, convoLineAt), 0, line.text.Length);
-            GameUI.Text(new Rect(x, r.y + 60f, textW, th + 6f), RichPrefix(line.text, shown), sDialog, GameUI.Ink);
+            GameUI.Text(new Rect(x, r.y + 66f, textW, th + 6f), RichPrefix(line.text, shown), sDialog, GameUI.GlassText);
 
-            // buttons
-            float by = r.yMax - 62f;
+            float by = r.yMax - inset - buttonBlock;
+            float actionY = compact ? by + buttonHeight + gap : by;
+            float bw = compact ? (textW - gap) * 0.5f : (textW - 3f * gap) * 0.25f;
             bool last = convoIdx >= convo.Count - 1;
-            if (GameUI.Button(new Rect(r.xMax - 40f - 220f, by, 220f, 46f), LineTyped ? (last ? "Done   (Space)" : "Next  ▶   (Space)") : "▶▶   (Space)", sDialogBtn)) DialogNext();
-            if (GameUI.Button(new Rect(r.xMax - 40f - 220f - 14f - 170f, by, 170f, 46f), "Skip   (Esc)", sDialogBtn)) SkipDialog();
-            if (GameUI.Button(new Rect(x, by, 210f, 46f), "Turn dialogs off", sDialogBtn)) DialogsOn = false;
-            if (GameUI.Button(new Rect(x + 222f, by, 150f, 46f), GuideVoice.On ? "Voice: on" : "Voice: off", sDialogBtn))
+            string nextLabel = LineTyped ? (last ? "Done (Space)" : "Next (Space)") : "Show text (Space)";
+            if (GameUI.GlassButton(new Rect(r.xMax - inset - bw, actionY, bw, buttonHeight), nextLabel, sDialogBtn, primary: true)) DialogNext();
+            if (GameUI.GlassButton(new Rect(r.xMax - inset - 2f * bw - gap, actionY, bw, buttonHeight), "Skip (Esc)", sDialogBtn)) SkipDialog();
+            if (GameUI.GlassButton(new Rect(x, by, bw, buttonHeight), "Turn dialogs off", sDialogBtn)) DialogsOn = false;
+            if (GameUI.GlassButton(new Rect(x + bw + gap, by, bw, buttonHeight), GuideVoice.On ? "Voice on" : "Voice off", sDialogBtn))
             {
                 GuideVoice.On = !GuideVoice.On;
                 if (GuideVoice.On) GuideVoice.Speak(line.text);
             }
-            // something on the computer keeps her from being heard (e.g. the Mac's sound is muted)
-            if (GuideVoice.On && GuideVoice.Problem != null)
-                GameUI.Text(new Rect(x, by - 30f, textW, 24f), GuideVoice.Problem, sSmall, new Color(0.82f, 0.30f, 0.18f));
+            if (voiceProblem)
+                GameUI.Text(new Rect(x, by - warningHeight, textW, warningHeight), GuideVoice.Problem, sVoiceNotice, new Color(1f, 0.76f, 0.52f));
             // a click anywhere else on the box moves on too
             var e = Event.current;
             if (e.type == EventType.MouseDown && r.Contains(e.mousePosition) && e.mousePosition.y < by - 6f) { DialogNext(); e.Use(); }
@@ -1235,6 +1241,8 @@ namespace SortOrStay
             GameUI.Text(new Rect(area.x, y, area.width, 70f), takeaway, sCap, GameUI.Ink);
         }
 
+        GUIStyle sDialogName, sVoiceNotice;
+
         void Styles()
         {
             if (sName != null && sName.font != null) return;
@@ -1260,7 +1268,9 @@ namespace SortOrStay
             sMenu = Make(21, FontStyle.Bold, TextAnchor.UpperCenter, false);
             sTag = Make(19, FontStyle.Normal, TextAnchor.UpperLeft, false);
             sDialog = Make(29, FontStyle.Normal, TextAnchor.UpperLeft, true);
-            sDialogBtn = Make(20, FontStyle.Bold, TextAnchor.UpperCenter, false);
+            sDialogName = Make(24, FontStyle.Bold, TextAnchor.UpperLeft, false);
+            sVoiceNotice = Make(18, FontStyle.Normal, TextAnchor.UpperLeft, true);
+            sDialogBtn = Make(20, FontStyle.Bold, TextAnchor.MiddleCenter, true);
         }
     }
 }

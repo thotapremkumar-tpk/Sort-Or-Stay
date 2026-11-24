@@ -78,17 +78,20 @@ namespace SortOrStay
             qi = 0;
             ResetQuestion();
             Open = true;
+            string topic = puzzle.Algorithm.ToLowerInvariant();
+            if (!string.IsNullOrEmpty(puzzle.CaseName))
+                topic += $" in the {puzzle.CaseName}";
             var ui = GameUI.Instance;
             if (ui != null)
             {
                 ui.ModalOpen = true;
-                ui.SetObjective($"Answer Professor Ada's 3 questions about <b>{puzzle.Algorithm.ToLowerInvariant()}</b> in its <b>{puzzle.CaseName}</b>.  All three right opens the door.");
+                ui.SetObjective($"Answer Professor Ada's three questions about <b>{topic}</b> to unlock the door.");
             }
             PlayerController.FreeCursor();
             if (PlayerController.Instance != null) PlayerController.Instance.StopWalking();
             var g = GuideNpc.Instance;
             if (g != null && g.isActiveAndEnabled)
-                g.Say($"Well sorted!  Three quick questions about the {puzzle.CaseName} before I open the door.", GuideNpc.Mood.Present, 4f);
+                g.Say($"Nice work! Answer three questions about {topic} to unlock the door.", GuideNpc.Mood.Present, 4f);
             ProceduralSfx.PlayUI(ProceduralSfx.Hint, 0.5f);
         }
 
@@ -123,7 +126,7 @@ namespace SortOrStay
                 answered = true;
                 feedback = q.explain;
                 feedbackGood = true;
-                Voice("Right.  " + q.explain);
+                Voice("Correct. " + q.explain);
                 ProceduralSfx.PlayUI(ProceduralSfx.Unlock, 0.45f);
                 if (guide) g.React(GuideNpc.Mood.Happy, "Exactly right.");
             }
@@ -131,7 +134,7 @@ namespace SortOrStay
             {
                 wrongPicks.Add(k);
                 WrongAnswers++;
-                feedback = "Not quite.  " + q.hint;
+                feedback = "Not quite. " + q.hint;
                 feedbackGood = false;
                 Voice(feedback);
                 ProceduralSfx.PlayUI(ProceduralSfx.Error, 0.5f);
@@ -151,7 +154,10 @@ namespace SortOrStay
         {
             Open = false;
             Passed = true;
-            Voice(WrongAnswers == 0 ? "All three right, first time. The door is open." : "All three answered. The door is open.");
+            string completion = WrongAnswers == 0
+                ? "You got all three right on your first try. The door is unlocked."
+                : "You answered all three questions correctly. The door is unlocked.";
+            Voice(completion);
             var ui = GameUI.Instance;
             if (ui != null)
             {
@@ -165,7 +171,7 @@ namespace SortOrStay
             if (puzzle.door != null) puzzle.door.Unlock();
             var g = GuideNpc.Instance;
             if (g != null && g.isActiveAndEnabled)
-                g.Say(WrongAnswers == 0 ? "All three right, first time!  The door is open." : "All three answered.  The door is open.", GuideNpc.Mood.Clap, 3.5f);
+                g.Say(completion, GuideNpc.Mood.Clap, 3.5f);
         }
 
         // ------------------------------------------------------------ drawing
@@ -203,7 +209,9 @@ namespace SortOrStay
             GameUI.Box(new Rect(r.x, r.y, pw, 7f), Blue);
 
             float x = r.x + 48f, y = r.y + 30f;
-            string head = $"ROOM CHECK  ·  {puzzle.Algorithm.ToUpperInvariant()}  ·  {puzzle.CaseName.ToUpperInvariant()}";
+            string head = $"ROOM QUIZ  ·  {puzzle.Algorithm.ToUpperInvariant()}";
+            if (!string.IsNullOrEmpty(puzzle.CaseName))
+                head += $"  ·  {puzzle.CaseName.ToUpperInvariant()}";
             GameUI.Text(new Rect(x, y, inner - 200f, 30f), head, sHead, Blue);
             GameUI.Text(new Rect(r.xMax - 48f - 220f, y, 220f, 30f), $"QUESTION {qi + 1} OF {qs.Count}", sHead, GameUI.InkSoft);
             // progress dots
@@ -256,11 +264,11 @@ namespace SortOrStay
             {
                 Rect nb = new Rect(r.xMax - 48f - 260f, r.yMax - 64f, 260f, 48f);
                 if (GameUI.Button(nb, qi + 1 < qs.Count ? "Next question   (Enter)" : "Open the door   (Enter)", sFoot)) Next();
-                GameUI.Text(new Rect(x, r.yMax - 52f, inner - 300f, 30f), "Right!", sHead, Good);
+                GameUI.Text(new Rect(x, r.yMax - 52f, inner - 300f, 30f), "Correct!", sHead, Good);
             }
             else
                 GameUI.Text(new Rect(x, r.yMax - 52f, inner, 30f),
-                            wrongPicks.Count > 0 ? "Pick another answer:  1 - 4 or click" : "Press 1 - 4 or click an answer", sFoot, GameUI.InkSoft);
+                            wrongPicks.Count > 0 ? "Press 1–4 or click to try another answer" : "Press 1–4 or click an answer", sFoot, GameUI.InkSoft);
         }
 
         void Styles()

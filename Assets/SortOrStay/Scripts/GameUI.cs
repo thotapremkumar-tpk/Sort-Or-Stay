@@ -4,7 +4,7 @@ using UnityEngine.InputSystem;
 
 namespace SortOrStay
 {
-    /// The whole HUD in a light theme: objective card, move counter, crosshair prompt, flash messages,
+    /// The whole HUD: progress indicators, move counter, crosshair prompt, flash messages,
     /// subtitles, the "why this works" popup, the pause menu, the fade and the end card.
     /// Drawn with IMGUI so it needs no prefabs.
     public class GameUI : MonoBehaviour
@@ -41,7 +41,7 @@ namespace SortOrStay
         public bool Paused { get; private set; }
         public bool PauseOpen => Paused && PauseMenuEnabled;
 
-        Rect cardRect, statsRect, controlsRect;      // HUD areas (GUI space) a click should not go through
+        Rect statsRect, controlsRect;      // HUD areas (GUI space) a click should not go through
 
         // light theme
         public static readonly Color Accent = new Color(0.93f, 0.45f, 0.05f);
@@ -59,7 +59,8 @@ namespace SortOrStay
         string endTitle, endBody, endFooter;
         float controlsUntil;
 
-        GUIStyle sTitle, sBody, sStats, sPrompt, sFlash, sSub, sSmall, sPopTitle, sPopBody, sFooter, sEndTitle, sEndBody, sButton, sChip;
+        GUIStyle sStats, sPrompt, sFlash, sSub, sSmall, sPopTitle, sPopBody, sFooter, sEndTitle, sEndBody, sPauseButton, sChip;
+        GUIStyle sControls;
 
         void Awake() { Instance = this; }
 
@@ -140,7 +141,7 @@ namespace SortOrStay
             if (Screen.height <= 0) return false;
             float s = Screen.height / 1080f;
             Vector2 g = new Vector2(screen.x / s, (Screen.height - screen.y) / s);
-            return cardRect.Contains(g) || statsRect.Contains(g) || controlsRect.Contains(g);
+            return statsRect.Contains(g) || controlsRect.Contains(g);
         }
 
         public void ShowEndCard(string title, string body, string footer)
@@ -172,25 +173,14 @@ namespace SortOrStay
 
             if (showHud && !EndCardOpen)
             {
-                // level card, top left
-                bool hasObj = !string.IsNullOrEmpty(objective);
-                float cardH = hasObj ? 26f + 34f + sBody.CalcHeight(new GUIContent(objective), 584f) + 18f : 60f;
-                Rect card = new Rect(28f, 26f, 640f, cardH);
-                cardRect = card;
-                Shadow(card);
-                Box(card, Card);
-                Box(new Rect(card.x, card.y, 5f, card.height), Accent);
-                Text(new Rect(card.x + 22f, card.y + 14f, 600f, 30f), levelTitle, sTitle, Accent);
-                if (hasObj) Text(new Rect(card.x + 22f, card.y + 50f, 600f, cardH - 56f), objective, sBody, Ink);
-
-                // floor progress chips under the card
-                float cx0 = 28f, cy0 = card.yMax + 10f;
+                // Floor and room progress stay in the HUD. Instructions are on the room terminal.
+                float cx0 = 28f, cy0 = 26f;
+                float progressRight = cx0 + 4f * 46f + 38f;
                 for (int i = 1; i <= 5; i++)
                 {
                     Rect chip = new Rect(cx0 + (i - 1) * 46f, cy0, 38f, 26f);
                     bool cur = i == floor, done = i < floor;
-                    Box(chip, cur ? Accent : done ? new Color(0.25f, 0.68f, 0.38f, 0.92f) : new Color(1f, 1f, 1f, 0.7f));
-                    Text(chip, i.ToString(), sChip, cur || done ? Color.white : InkSoft);
+                    DrawProgressChip(chip, i.ToString(), cur, done);
                 }
 
                 // the floor's three rooms: best, average, worst case
@@ -199,26 +189,31 @@ namespace SortOrStay
                     string[] names = { "BEST", "AVERAGE", "WORST" };
                     float[] widths = { 72f, 112f, 88f };
                     float rx = cx0 + 5 * 46f + 16f;
+                    if (rx + 288f > W - 28f) { rx = cx0; cy0 += 34f; }
                     for (int k = 1; k <= 3; k++)
                     {
                         float w = widths[k - 1];
                         Rect chip = new Rect(rx, cy0, w, 26f);
                         bool cur = k == room, done = k < room;
-                        Box(chip, cur ? new Color(0.16f, 0.42f, 0.78f, 0.95f) : done ? Done : new Color(1f, 1f, 1f, 0.7f));
-                        Text(chip, names[k - 1], sChip, cur || done ? Color.white : InkSoft);
+                        DrawProgressChip(chip, names[k - 1], cur, done);
+                        progressRight = Mathf.Max(progressRight, chip.xMax);
                         rx += w + 8f;
                     }
                 }
 
                 // move counter, top right
+                statsRect = Rect.zero;
                 if (!string.IsNullOrEmpty(stats))
                 {
                     Vector2 sz = sStats.CalcSize(new GUIContent(stats));
-                    Rect r = new Rect(W - 28f - sz.x - 44f, 26f, sz.x + 44f, 54f);
+                    float width = Mathf.Min(sz.x + 54f, W - 56f);
+                    float x = W - 28f - width;
+                    float y = x >= progressRight + 16f ? 26f : cy0 + 38f;
+                    float height = sStats.CalcHeight(new GUIContent(stats), width - 44f);
+                    Rect r = new Rect(x, y, width, height + 26f);
                     statsRect = r;
-                    Shadow(r);
-                    Box(r, Card);
-                    Text(new Rect(r.x + 22f, r.y + 13f, sz.x + 4f, 30f), stats, sStats, Ink);
+                    GlassPanel(r, 12f);
+                    Text(new Rect(r.x + 22f, r.y + 13f, width - 44f, height), stats, sStats, GlassText);
                 }
 
                 // no text label at the pointer (it covered the view while looking around); the bouncing marker
@@ -241,17 +236,17 @@ namespace SortOrStay
 
                 // controls strip, bottom left
                 controlsRect = Rect.zero;
-                if (Time.time < controlsUntil)
+                if (Time.time < controlsUntil && !(GuideNpc.Instance != null && GuideNpc.Instance.DialogOpen))
                 {
                     string c = promptAtCursor
                         ? "Click a thing to use it  ·  Right-drag / arrows turn  ·  Scroll zoom  ·  WASD walk  ·  Space jump  ·  H hint (Ada comes)  ·  T lesson  ·  Tab mouse-look  ·  Esc menu"
                         : "WASD walk  ·  Shift run  ·  Space jump  ·  Mouse / arrows look  ·  Click / E use  ·  H hint  ·  T lesson  ·  V camera  ·  C character  ·  Tab point-and-click  ·  Esc menu";
-                    Vector2 sz = sSmall.CalcSize(new GUIContent(c));
-                    Rect r = new Rect(28f, H - 28f - 46f, Mathf.Min(sz.x + 36f, W - 56f), 46f);
+                    float width = Mathf.Min(sControls.CalcSize(new GUIContent(c)).x + 36f, W - 56f);
+                    float height = sControls.CalcHeight(new GUIContent(c), width - 36f);
+                    Rect r = new Rect(28f, H - 52f - height, width, height + 24f);
                     controlsRect = r;
-                    Shadow(r);
-                    Box(r, Card);
-                    Text(new Rect(r.x + 18f, r.y + 12f, sz.x + 4f, 26f), c, sSmall, Ink);
+                    GlassPanel(r, 12f);
+                    Text(new Rect(r.x + 18f, r.y + 12f, width - 36f, height), c, sControls, GlassText);
                 }
             }
 
@@ -316,35 +311,54 @@ namespace SortOrStay
 
         // ------------------------------------------------------------ pause menu
 
+        internal static readonly Color GlassText = new Color(0.94f, 0.98f, 1f);
+        internal static readonly Color GlassAccent = new Color(0.49f, 0.95f, 0.87f);
+        static readonly Color GlassFill = new Color(0.06f, 0.12f, 0.19f, 0.86f);
+
+        void DrawProgressChip(Rect r, string label, bool current, bool complete)
+        {
+            RoundedBox(r, current ? GlassAccent : complete ? new Color(0.13f, 0.36f, 0.30f, 0.92f) : GlassFill, 7f);
+            Text(r, label, sChip, current ? Ink : GlassText);
+        }
+
+        internal static void GlassPanel(Rect r, float radius)
+        {
+            RoundedBox(new Rect(r.x, r.y + 5f, r.width, r.height), new Color(0f, 0f, 0f, 0.24f), radius);
+            RoundedBox(r, GlassFill, radius);
+            RoundedBox(r, new Color(0.66f, 0.85f, 0.94f, 0.42f), radius, 1f);
+        }
+
         void DrawPause(float W, float H)
         {
             var pc = PlayerController.Instance;
-            const float bw = 420f, bh = 54f, gap = 12f;
-            int rows = 8;
+            const float bh = 52f, gap = 10f, inset = 32f;
             int floorCount = GameState.FloorScenes.Length;
-            float ph = 120f + rows * (bh + gap) + 40f;
-            Rect r = new Rect((W - 520f) * 0.5f, (H - ph) * 0.5f, 520f, ph);
+            float pw = Mathf.Min(520f, W - 32f), bw = pw - 2f * inset;
+            float ph = 134f + 8f * bh + 7f * gap + inset;
+            Rect r = new Rect((W - pw) * 0.5f, (H - ph) * 0.5f, pw, ph);
 
-            Box(new Rect(0f, 0f, W, H), new Color(0.96f, 0.96f, 0.96f, 0.35f));
-            Shadow(r);
-            Box(r, CardSolid);
-            Box(new Rect(r.x, r.y, r.width, 7f), Accent);
-            Text(new Rect(r.x + 50f, r.y + 32f, 420f, 50f), "PAUSED", sPopTitle, Accent);
+            Box(new Rect(0f, 0f, W, H), new Color(0.02f, 0.05f, 0.09f, 0.27f));
+            GlassPanel(r, 24f);
 
-            float y = r.y + 112f;
-            float x = r.x + 50f;
-            if (Button(new Rect(x, y, bw, bh), "Resume")) Resume();
+            float x = r.x + inset;
+            Text(new Rect(x, r.y + 28f, bw, 52f), "Paused", sPopTitle, GlassText);
+            string location = room > 0 ? $"Floor {floor}  /  Room {room}" : $"Floor {floor}";
+            Text(new Rect(x, r.y + 83f, bw, 28f), location, sSmall, GlassAccent);
+
+            float y = r.y + 134f;
+            if (Button(new Rect(x, y, bw, bh), "Resume", primary: true)) Resume();
             y += bh + gap;
             if (Button(new Rect(x, y, bw, bh), BuildingManager.Instance != null && room > 0 ? "Restart this room" : "Restart this floor")) LevelManager.Reload();
             y += bh + gap;
             // one button per floor; floors whose scene is not built yet are greyed out
             float fw = (bw - (floorCount - 1) * gap) / floorCount;
+            bool wasEnabled = GUI.enabled;
             for (int i = 0; i < floorCount; i++)
             {
-                GUI.enabled = LevelManager.FloorExists(i + 1);
-                if (Button(new Rect(x + i * (fw + gap), y, fw, bh), "F" + (i + 1))) LevelManager.LoadFloor(i + 1);
+                GUI.enabled = wasEnabled && LevelManager.FloorExists(i + 1);
+                if (Button(new Rect(x + i * (fw + gap), y, fw, bh), "F" + (i + 1), centered: true)) LevelManager.LoadFloor(i + 1);
             }
-            GUI.enabled = true;
+            GUI.enabled = wasEnabled;
             y += bh + gap;
             if (pc != null && Button(new Rect(x, y, bw, bh), "Character:  " + pc.AvatarName + "   (C)")) pc.CycleAvatar();
             y += bh + gap;
@@ -376,7 +390,29 @@ namespace SortOrStay
 
         void Resume() { SetPaused(false); }
 
-        bool Button(Rect r, string label) => Button(r, label, sButton);
+        bool Button(Rect r, string label, bool primary = false, bool centered = false)
+            => GlassButton(r, label, centered ? sChip : sPauseButton, primary);
+
+        internal static bool GlassButton(Rect r, string label, GUIStyle style, bool primary = false)
+        {
+            bool hover = GUI.enabled && r.Contains(Event.current.mousePosition);
+            Color fill = primary
+                ? (hover ? new Color(0.72f, 1f, 0.94f) : GlassAccent)
+                : new Color(0.67f, 0.85f, 0.94f, hover ? 0.23f : 0.10f);
+            RoundedBox(r, fill, 10f);
+            if (!primary)
+                RoundedBox(r, new Color(0.67f, 0.85f, 0.94f, hover ? 0.62f : 0.22f), 10f, 1f);
+
+            Rect labelRect = new Rect(r.x + 8f, r.y, r.width - 16f, r.height);
+            Color ink = !GUI.enabled ? new Color(0.61f, 0.68f, 0.74f) : primary ? Ink : GlassText;
+            Text(labelRect, label, style, ink);
+            return GUI.Button(r, GUIContent.none, GUIStyle.none);
+        }
+
+        internal static void RoundedBox(Rect r, Color color, float radius, float border = 0f)
+        {
+            GUI.DrawTexture(r, Texture2D.whiteTexture, ScaleMode.StretchToFill, true, 0f, Display(color), border, radius);
+        }
 
         /// A flat HUD button (light grey, orange when hovered).
         public static bool Button(Rect r, string label, GUIStyle style)
@@ -424,22 +460,18 @@ namespace SortOrStay
 
         static Font hudFont;
 
-        /// A dynamic OS font, so every style's size and weight are honoured on any machine.
+        /// Use Unity's bundled font so the HUD renders consistently across operating systems.
         public static Font HudFont()
         {
             if (hudFont != null) return hudFont;
-            try
-            {
-                hudFont = Font.CreateDynamicFontFromOSFont(new[] { "Helvetica Neue", "Helvetica", "Arial", "Segoe UI", "Liberation Sans", "DejaVu Sans" }, 24);
-            }
-            catch (System.Exception) { hudFont = null; }
+            hudFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             if (hudFont == null) hudFont = GUI.skin.font;
             return hudFont;
         }
 
         void EnsureStyles()
         {
-            if (sTitle != null && sTitle.font != null) return;
+            if (sStats != null && sStats.font != null) return;
             Font f = HudFont();
             GUIStyle Make(int size, FontStyle fs, TextAnchor a, bool wrap)
             {
@@ -452,19 +484,18 @@ namespace SortOrStay
                 st.normal.textColor = Color.white;     // tinted per draw by GUI.color
                 return st;
             }
-            sTitle = Make(20, FontStyle.Bold, TextAnchor.UpperLeft, false);
-            sBody = Make(24, FontStyle.Normal, TextAnchor.UpperLeft, true);
-            sStats = Make(22, FontStyle.Bold, TextAnchor.UpperLeft, false);
+            sStats = Make(22, FontStyle.Bold, TextAnchor.UpperLeft, true);
             sPrompt = Make(22, FontStyle.Bold, TextAnchor.UpperCenter, false);
             sFlash = Make(30, FontStyle.Bold, TextAnchor.UpperCenter, true);
             sSub = Make(28, FontStyle.Italic, TextAnchor.MiddleCenter, false);
             sSmall = Make(19, FontStyle.Normal, TextAnchor.UpperLeft, false);
+            sControls = Make(19, FontStyle.Normal, TextAnchor.UpperLeft, true);
             sPopTitle = Make(40, FontStyle.Bold, TextAnchor.UpperLeft, false);
             sPopBody = Make(25, FontStyle.Normal, TextAnchor.UpperLeft, true);
             sFooter = Make(22, FontStyle.Bold, TextAnchor.UpperLeft, false);
             sEndTitle = Make(64, FontStyle.Bold, TextAnchor.UpperLeft, false);
             sEndBody = Make(27, FontStyle.Normal, TextAnchor.UpperLeft, true);
-            sButton = Make(23, FontStyle.Bold, TextAnchor.UpperCenter, false);
+            sPauseButton = Make(23, FontStyle.Bold, TextAnchor.MiddleLeft, false);
             sChip = Make(18, FontStyle.Bold, TextAnchor.MiddleCenter, false);
         }
     }

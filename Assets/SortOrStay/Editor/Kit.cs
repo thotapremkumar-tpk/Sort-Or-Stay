@@ -136,6 +136,16 @@ namespace SortOrStayEditor
             return m;
         }
 
+        public static Material MonitorScreen(string name)
+        {
+            var m = Flat(name, Color.black, 0f, 0f);
+            m.shader = Shader.Find("Universal Render Pipeline/Unlit");
+            m.SetColor("_BaseColor", Color.black);
+            m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.EmissiveIsBlack;
+            EditorUtility.SetDirty(m);
+            return m;
+        }
+
         /// ambientCG material: Color + NormalGL, tiled.
         public static Material Pbr(string name, string id, Color tint, float tiling, float smooth, float metallic)
         {

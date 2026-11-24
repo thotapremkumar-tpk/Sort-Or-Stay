@@ -719,8 +719,8 @@ namespace SortOrStay
             if (terminal != null)
             {
                 terminal.SetText(
-                    "<b>VAULT CONTROL</b>   FLOOR 5\n" +
-                    "> Raise the pivot (last bar).\n> Smaller:  behind the gate.\n> Bigger:  leave it.\n> Drop the pivot.  Repeat.\n\n" +
+                    "<b>QUICK SORT</b>   FLOOR 5\n" +
+                    "Raise the last bar as the pivot.\nSend smaller bars behind the gate.\nLeave larger bars in place.\nDrop the pivot and repeat.\n\n" +
                     $"VAULT   {status}\n" +
                     $"PIVOTS {partitions}   SWAPS {swaps}\n\n" +
                     "<size=80%>[ press HINT or H ]</size>");

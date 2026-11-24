@@ -9,7 +9,22 @@ namespace SortOrStay
         public TMP_Text screen;
         public SortPuzzleBase puzzle;
 
-        public void SetText(string text) { if (screen != null) screen.text = text; }
+        public void SetText(string text)
+        {
+            if (screen == null) return;
+            screen.color = Color.white;
+            int lineEnd = text.IndexOf('\n');
+            if (lineEnd < 0)
+            {
+                screen.text = text;
+                return;
+            }
+
+            string roomLine = puzzle != null && puzzle.roomNumber > 0
+                ? $"\n<size=85%>ROOM {puzzle.roomNumber}  ·  {puzzle.CaseName.ToUpperInvariant()}</size>"
+                : "";
+            screen.text = "<color=#7FF2D6>" + text.Substring(0, lineEnd) + roomLine + "</color>" + text.Substring(lineEnd);
+        }
 
         public string prompt = "Terminal  ·  ask for a hint";
         public string Prompt => prompt;

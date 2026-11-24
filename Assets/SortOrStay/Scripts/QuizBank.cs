@@ -100,13 +100,13 @@ namespace SortOrStay
             else if (c == SortCase.Average)
             {
                 string avg = (n * (n - 1) / 4f).ToString("0.#");
-                l.Add(Q($"On a <b>random</b> row of {n} keys, about how many out-of-order pairs (and so swaps) should you expect?",
+                l.Add(Q($"When {n} keys are shuffled at random, how many swaps does bubble sort make on average?",
                         "Any two keys are in the wrong order half of the time.  How many pairs of keys are there?",
-                        $"There are n(n−1)/2 = {max} pairs, each out of order half the time:  about n(n−1)/4 ≈ {avg} swaps.  This row had {inv}.",
+                        $"There are {max} pairs, and each is out of order half the time. That gives an average of {avg} swaps. This row started with {inv} out-of-order {S(inv, "pair", "pairs")}.",
                         $"About {avg}  (half of all {max} pairs)", $"About {n / 2}", $"Exactly {max}", $"Exactly {n - 1}"));
                 l.Add(Q("Bubble sort's <b>average-case</b> running time is…",
                         "About n²/4 swaps.  What happens to n²/4 when n doubles?",
-                        "About n²/4 swaps and n²/2 comparisons:  double the keys and the work goes up about four times.  That's <b>O(n²)</b>.",
+                        "The average number of swaps is n(n − 1)/4. Doubling the number of keys roughly quadruples the work, so the running time is <b>O(n²)</b>.",
                         ON2, ON, ONLOGN, O1));
                 int m1 = n + 1;
                 l.Add(Q($"With <b>{m1}</b> keys instead of {n}, the most comparisons bubble sort can need is…",
@@ -130,7 +130,7 @@ namespace SortOrStay
                         "A reversed row has fewer pairs to compare"));
                 l.Add(Q($"If the reversed row doubled to <b>{d}</b> keys, how many swaps would bubble sort make?",
                         $"n(n−1)/2 again, with n = {d}.",
-                        $"{d} · {d - 1} / 2 = {Pairs(d)}:  about four times {max}.  Double the input, four times the work:  that's O(n²).",
+                        $"{d} × {d - 1} / 2 = {Pairs(d)} swaps. The swap count grows roughly with the square of the input size, so the running time is O(n²).",
                         Nums(Pairs(d), 2 * max, d, d * d)));
             }
             return l;
@@ -167,10 +167,10 @@ namespace SortOrStay
                         "How many swaps can one pass make at most?  How many passes are there?",
                         $"At most one swap per pass, and there are n − 1 passes:  {n - 1}.  That's selection sort's strength:  few moves of heavy things.",
                         Nums(n - 1, max, n, n * n)));
-                l.Add(Q("Why did every reading go back to <b>?</b> after each pass?",
+                l.Add(Q("Why did the game hide the remaining crate weights after each pass?",
                         "What does the algorithm carry over from one pass to the next?",
-                        "Only the sorted part survives a pass.  The lightest of the rest is searched from scratch every time, which is why the comparisons never drop.",
-                        "Selection sort keeps no memory between passes:  it scans what is left again",
+                        "The game hides the weights to demonstrate how selection sort scans the unsorted crates again to find the next lightest one.",
+                        "Each pass scans the remaining unsorted crates again",
                         "The crates change weight after each pass",
                         "The scale only remembers the heaviest crate",
                         "So that you weigh fewer crates"));
@@ -204,12 +204,12 @@ namespace SortOrStay
             var l = new List<QuizQuestion>();
             if (c == SortCase.Best)
             {
-                l.Add(Q($"On a shelf that is <b>already sorted</b>, each new book is compared once with its left neighbour and stays.  How many comparisons for {n} books?",
+                l.Add(Q($"If all {n} books were <b>already sorted</b>, how many comparisons would insertion sort make?",
                         "The first book on its own is already a sorted section.  How many books are left to insert?",
                         $"Books 2 to {n}:  one comparison each and no shifts, so n − 1 = {n - 1}.",
                         Nums(n - 1, max, n, 0)));
                 l.Add(Q("Insertion sort's <b>best-case</b> running time is…",
-                        "One comparison per book.",
+                        "The first book starts the sorted section. Each remaining book needs one comparison.",
                         "n − 1 comparisons and no shifts:  <b>O(n)</b>.  Insertion sort is <i>adaptive</i>:  the closer to sorted, the faster.",
                         ON, ON2, ONLOGN, OLOGN));
                 l.Add(Q($"This shelf started with <b>{inv}</b> out-of-order {S(inv, "pair", "pairs")}.  How many shifts does insertion sort need?",
@@ -230,8 +230,8 @@ namespace SortOrStay
                         "About half of it", "None of it", "All of it", "Exactly one book"));
                 l.Add(Q("Why is insertion sort a good choice for <b>nearly sorted</b> data?",
                         "What decides how far each book moves?",
-                        "Its work is the number of out-of-order pairs.  Nearly sorted means few pairs, so it's close to O(n), as Room 1 showed.",
-                        "Each book only moves past the few books bigger than it",
+                        "Each out-of-order pair requires one shift. With few such pairs, insertion sort makes few shifts and still checks each book after the first.",
+                        "Each book moves past only the larger books that came before it",
                         "It splits the shelf into halves",
                         "It uses a second shelf as extra memory",
                         "It picks a pivot first"));
@@ -240,9 +240,9 @@ namespace SortOrStay
             {
                 l.Add(Q($"The shelf started in <b>reverse order</b>.  How many shifts does insertion sort need for {n} books?",
                         "Book 2 shifts past 1 book, book 3 past 2 books…",
-                        $"Book k shifts past all k − 1 books before it:  1 + 2 + … + {n - 1} = {max}.",
+                        $"To insert book k, shift all k − 1 earlier books one place to the right. That gives 1 + 2 + … + {n - 1} = {max} shifts.",
                         Nums(max, n, n - 1, n * n)));
-                l.Add(Q("In the worst case, the k-th book you insert shifts past…",
+                l.Add(Q("In the worst case, how many of the earlier books does book k move past?",
                         "In a reversed shelf, how does each new book compare with the sorted section?",
                         "Each new book is the smallest so far, so it travels all the way to the left:  past all k − 1 books.",
                         "Every book already in the sorted section (k − 1 books)", "Exactly one book", "No books", "Half of the sorted section"));
@@ -294,7 +294,7 @@ namespace SortOrStay
             else
             {
                 l.Add(Q($"This row was dealt so that every merge alternates between its two runs to the very end.  How many comparisons is that for {n} blocks?",
-                        "A merge of a + b blocks that alternates to the end compares a + b − 1 times.  Add that up over every merge.",
+                        "If neither run empties until only one block remains, merging runs of a and b blocks takes a + b − 1 comparisons. Add those counts across all merges.",
                         $"n·log₂n − n + 1 = {worstC}, the most merge sort can need for {n} blocks.  You made {p.comparisons}.",
                         Nums(worstC, bestC, max, moves)));
                 l.Add(Q("Merge sort's <b>worst-case</b> running time is…",
@@ -330,14 +330,14 @@ namespace SortOrStay
                         Nums(n - 1, n, lg, max)));
                 l.Add(Q("Quick sort's <b>best-case</b> running time is…",
                         "About log₂n levels, about n comparisons per level.",
-                        "Balanced splits:  n comparisons on each of log₂n levels, <b>O(n log n)</b>.",
+                        "Balanced partitions give about log₂ n levels, with at most n comparisons per level. This gives <b>O(n log n)</b> time.",
                         ONLOGN, ON, ON2, OLOGN));
             }
             else if (c == SortCase.Average)
             {
                 l.Add(Q("Quick sort's <b>average-case</b> running time is…",
-                        "On random input, most pivots split their range reasonably well.",
-                        "Random pivots split well most of the time:  about 1.39·n·log₂n comparisons, <b>O(n log n)</b>.",
+                        "Think about how random input affects where the last bar ranks within its range.",
+                        "On randomly ordered input, the last bar can have any rank in its range. Averaging over the possible splits gives <b>O(n log n)</b> time.",
                         ONLOGN, ON2, ON, O1));
                 l.Add(Q("After a partition, where is the pivot?",
                         "Where are the smaller bars and the bigger bars when the pivot drops in?",
@@ -345,8 +345,8 @@ namespace SortOrStay
                         "In its final sorted position", "At the end of the row", "Back where it started", "In the middle of the row"));
                 l.Add(Q("What do the \"to do\" ranges on the board stand for?",
                         "Each partition leaves two parts behind.  When do they get sorted?",
-                        "Each partition leaves a left and a right part to sort later.  A real quick sort keeps them on the call stack:  that's the recursion.",
-                        "The recursion stack:  parts still waiting to be sorted", "Bars that are already sorted", "The swaps you made", "Your wrong moves"));
+                        "Each partition can leave ranges to the left and right of the pivot. Quick sort still needs to process any of those ranges that contain two or more bars.",
+                        "Ranges still waiting to be sorted", "Bars that are already sorted", "The swaps you made", "Your wrong moves"));
             }
             else
             {
@@ -356,12 +356,12 @@ namespace SortOrStay
                         Nums(max, bestQ, n - 1, n)));
                 l.Add(Q("Quick sort's <b>worst-case</b> running time is…",
                         "How many levels did the splitting take here instead of log₂n?",
-                        "Splits of n−1 and 0 give n levels instead of log₂n:  <b>O(n²)</b>.  Sorted input is the trap for a last-bar pivot.",
+                        "Each partition removes only the pivot from the remaining range. The n − 1 partitions perform n(n − 1)/2 comparisons in total, giving <b>O(n²)</b> time.",
                         ON2, ONLOGN, ON, OLOGN));
-                l.Add(Q("How do real quick sort programs avoid this worst case?",
+                l.Add(Q("Which pivot strategy makes this worst case less likely on already sorted input?",
                         "The problem was always choosing the biggest bar as the pivot.",
-                        "A random pivot, or the median of the first, middle and last bar, makes a bad split on every level very unlikely.",
-                        "Pick the pivot at random, or the median of three", "Always use the last bar as the pivot", "Sort the input first", "Compare each bar twice"));
+                        "A random pivot can land anywhere in the range. On sorted input, taking the median of the first, middle, and last bars picks a pivot near the middle.",
+                        "Choose a random pivot or the median of the first, middle, and last bars", "Always use the last bar as the pivot", "Sort the input first", "Compare each bar twice"));
             }
             return l;
         }

@@ -166,7 +166,7 @@ namespace SortOrStayEditor
             mBlockStripe = Flat("L4_BlockStripe", new Color(0.93f, 0.45f, 0.05f), 0.4f, 0f);
             mLabel = Flat("L4_Label", new Color(0.97f, 0.96f, 0.92f), 0.2f, 0f);
             mStrip = Emissive("L4_RunStrip", new Color(0.62f, 0.66f, 0.72f), new Color(0.62f, 0.66f, 0.72f), 0.3f);
-            mScreen = Emissive("L4_Screen", new Color(0.02f, 0.05f, 0.08f), new Color(0.02f, 0.12f, 0.2f), 1f);
+            mScreen = MonitorScreen("L4_Screen");
             mRack = Flat("L4_ServerRack", new Color(0.17f, 0.18f, 0.21f), 0.5f, 0.3f);
             mLedGreen = Emissive("L4_LedGreen", new Color(0.2f, 1f, 0.4f), new Color(0.2f, 1f, 0.4f), 3f);
             mLedBlue = Emissive("L4_LedBlue", new Color(0.25f, 0.6f, 1f), new Color(0.25f, 0.6f, 1f), 3f);

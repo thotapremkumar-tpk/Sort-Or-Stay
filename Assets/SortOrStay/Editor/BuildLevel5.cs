@@ -180,7 +180,7 @@ namespace SortOrStayEditor
             mLaser = Emissive("L5_Laser", new Color(1f, 0.15f, 0.1f), new Color(1f, 0.15f, 0.1f), 4f);
             mPadBlue = Emissive("L5_PadSmaller", new Color(0.25f, 0.55f, 1f), new Color(0.3f, 0.6f, 1f), 1.2f);
             mPadRed = Emissive("L5_PadBigger", new Color(1f, 0.40f, 0.25f), new Color(1f, 0.42f, 0.28f), 1.2f);
-            mScreen = Emissive("L5_Screen", new Color(0.05f, 0.04f, 0.02f), new Color(0.12f, 0.08f, 0.02f), 1f);
+            mScreen = MonitorScreen("L5_Screen");
             mExit = Emissive("L5_Exit", new Color(0.05f, 0.5f, 0.2f), new Color(0.1f, 0.9f, 0.35f), 1.6f);
             mLamp = Emissive("L5_DoorLamp", new Color(1f, 0.12f, 0.08f), new Color(1f, 0.12f, 0.08f), 4f);
             mPanel = Emissive("L5_LightPanel", new Color(1f, 0.97f, 0.9f), new Color(1f, 0.95f, 0.85f), 1.7f);

@@ -175,7 +175,7 @@ namespace SortOrStay
                 var psi = new ProcessStartInfo
                 {
                     FileName = "/usr/bin/say",
-                    Arguments = (voiceName != null ? "-v \"" + voiceName + "\" " : "") + "-r 182 --file-format=WAVE --data-format=LEI16@" + SR + " -o \"" + wav + "\"",
+                    Arguments = (voiceName != null ? "-v \"" + voiceName + "\" " : "") + "-r " + GuideVoice.MacRate + " --file-format=WAVE --data-format=LEI16@" + SR + " -o \"" + wav + "\"",
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     RedirectStandardInput = true,

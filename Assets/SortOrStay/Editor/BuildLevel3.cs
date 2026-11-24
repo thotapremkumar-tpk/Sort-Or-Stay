@@ -161,7 +161,7 @@ namespace SortOrStayEditor
             mShadeGreen = Emissive("L3_BankerShade", new Color(0.10f, 0.42f, 0.24f), new Color(0.2f, 0.5f, 0.3f), 0.25f);
             mBulb = Emissive("L3_Bulb", new Color(1f, 0.95f, 0.85f), new Color(1f, 0.9f, 0.72f), 2.4f);
             mGap = Emissive("L3_Gap", new Color(0.2f, 0.75f, 1f), new Color(0.2f, 0.75f, 1f), 2f);
-            mScreen = Emissive("L3_Screen", new Color(0.02f, 0.05f, 0.06f), new Color(0.02f, 0.14f, 0.12f), 1f);
+            mScreen = MonitorScreen("L3_Screen");
             mExit = Emissive("L3_Exit", new Color(0.05f, 0.5f, 0.2f), new Color(0.1f, 0.9f, 0.35f), 1.6f);
             mLamp = Emissive("L3_DoorLamp", new Color(1f, 0.12f, 0.08f), new Color(1f, 0.12f, 0.08f), 4f);
 

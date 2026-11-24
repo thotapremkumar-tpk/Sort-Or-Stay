@@ -173,7 +173,7 @@ namespace SortOrStayEditor
 
             mLed = Emissive("L2_Led", new Color(0.2f, 0.2f, 0.22f), Color.black, 0f);
             mNext = Emissive("L2_NextBay", new Color(1f, 0.62f, 0.1f), new Color(1f, 0.62f, 0.1f), 1.5f);
-            mScreen = Emissive("L2_Screen", new Color(0.02f, 0.05f, 0.07f), new Color(0.02f, 0.12f, 0.18f), 1f);
+            mScreen = MonitorScreen("L2_Screen");
             mRed = Emissive("L2_ButtonRed", new Color(0.8f, 0.1f, 0.07f), new Color(0.9f, 0.12f, 0.06f), 0.8f);
             mGreen = Emissive("L2_ButtonGreen", new Color(0.12f, 0.75f, 0.25f), new Color(0.15f, 0.9f, 0.3f), 0.9f);
             mBulb = Emissive("L2_Bulb", new Color(1f, 0.97f, 0.9f), new Color(1f, 0.93f, 0.8f), 2.5f);

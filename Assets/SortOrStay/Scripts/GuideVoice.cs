@@ -19,7 +19,33 @@ namespace SortOrStay
     public static class GuideVoice
     {
         const string Key = "SortOrStay.GuideVoice";
-        const int Rate = 180;                          // words per minute (macOS)
+        internal const int MacRate = 165;              // words per minute
+
+        // Keep the script fixed. Dialogue is passed separately through standard input.
+        const string WindowsSpeechScript = @"
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Speech
+$speech = New-Object System.Speech.Synthesis.SpeechSynthesizer
+try {
+    try {
+        $voices = $speech.GetInstalledVoices() | Where-Object {
+            $_.Enabled -and $_.VoiceInfo.Gender -eq 'Female' -and
+                $_.VoiceInfo.Culture.TwoLetterISOLanguageName -eq 'en'
+        }
+        $voice = $voices | Where-Object { $_.VoiceInfo.Name -like '*Zira*' } | Select-Object -First 1
+        if (-not $voice) { $voice = $voices | Select-Object -First 1 }
+        if ($voice) { $speech.SelectVoice($voice.VoiceInfo.Name) }
+        else { $speech.SelectVoiceByHints([System.Speech.Synthesis.VoiceGender]::Female) }
+    } catch {
+        try { $speech.SelectVoiceByHints([System.Speech.Synthesis.VoiceGender]::Female) } catch {}
+    }
+    $speech.Rate = -1
+    [Console]::InputEncoding = [System.Text.Encoding]::UTF8
+    $line = [Console]::In.ReadToEnd().Trim()
+    if ($line) { $speech.Speak($line) }
+} finally {
+    $speech.Dispose()
+}";
 
         /// Preferred voices, in order (the first one installed is used; none: the system voice).
         static readonly string[] Preferred =
@@ -140,15 +166,13 @@ namespace SortOrStay
                 if (IsMac)
                 {
                     psi.FileName = "/usr/bin/say";
-                    psi.Arguments = (line.voice != null ? "-v \"" + line.voice + "\" " : "") + "-r " + Rate;   // no text argument: reads stdin
+                    psi.Arguments = (line.voice != null ? "-v \"" + line.voice + "\" " : "") + "-r " + MacRate;   // no text argument: reads stdin
                 }
                 else
                 {
                     psi.FileName = "powershell";
-                    psi.Arguments = "-NoProfile -NonInteractive -WindowStyle Hidden -Command \"Add-Type -AssemblyName System.Speech; " +
-                                    "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; " +
-                                    "try { $s.SelectVoiceByHints([System.Speech.Synthesis.VoiceGender]::Female) } catch {}; " +
-                                    "$s.Speak([Console]::In.ReadToEnd())\"";
+                    psi.Arguments = "-NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand " +
+                                    Convert.ToBase64String(Encoding.Unicode.GetBytes(WindowsSpeechScript));
                 }
                 var p = new Process { StartInfo = psi, EnableRaisingEvents = true };
                 p.ErrorDataReceived += (s, e) => { if (e.Data != null) lock (line.err) line.err.AppendLine(e.Data); };

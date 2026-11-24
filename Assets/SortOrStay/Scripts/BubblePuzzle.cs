@@ -21,9 +21,6 @@ namespace SortOrStay
 
         [Header("Room")]
         public Terminal terminal;
-        public Renderer[] slotLeds;          // panel above the door: lights when a hook holds its final key
-        public Color ledOn = new Color(0.25f, 1f, 0.4f);
-        public Color ledOff = new Color(0.05f, 0.05f, 0.05f);
 
         [Header("Hands")]
         [Tooltip("The avatar walks this close to a key and takes it by hand.")]
@@ -37,9 +34,9 @@ namespace SortOrStay
         int startInversions;
         int pass, cmp;                       // bubble sort cursor: pass number and left index of the pair being compared
         int passSwaps;
-        Material[] ledMats;
         Coroutine lift;                      // the picked-up key sliding off / back onto its hook
         bool carrying;                       // the held key is in the avatar's hand, away from the rack
+        bool selectedFromDistance;
         int carrySide;
 
         int N => items.Count;
@@ -47,16 +44,6 @@ namespace SortOrStay
 
         void Start()
         {
-            if (slotLeds != null)
-            {
-                ledMats = new Material[slotLeds.Length];
-                for (int i = 0; i < slotLeds.Length; i++)
-                {
-                    if (slotLeds[i] == null) continue;
-                    ledMats[i] = slotLeds[i].material;
-                    ledMats[i].EnableKeyword("_EMISSION");
-                }
-            }
             if (IsCurrent) ApplyViewStandOff();
             Setup();
         }
@@ -154,7 +141,12 @@ namespace SortOrStay
             if (Player != null && selected != null && !busy)
             {
                 float away = FlatToSlot(selected);
-                if (!carrying && away > carryDistance) StartCarry();
+                if (selectedFromDistance && (away <= carryDistance || Player.view != PlayerController.View.Second))
+                {
+                    selectedFromDistance = false;
+                    if (away <= carryDistance && Hand != null) Hand.Hold(carrySide, selected.transform, Grip);
+                }
+                if (!carrying && !selectedFromDistance && away > carryDistance) StartCarry();
                 else if (carrying && away < carryDistance - 0.25f) EndCarry();
             }
 
@@ -256,12 +248,13 @@ namespace SortOrStay
         void Select(SortItem key)
         {
             selected = key;
+            selectedFromDistance = Player != null && Player.view == PlayerController.View.Second && FlatToSlot(key) > carryDistance;
             carrySide = HandFor(items.IndexOf(key), cmp);
             key.Highlight(SortItem.SelectedColor);
             key.Kick(25f);
             ProceduralSfx.Play(ProceduralSfx.Select, key.transform.position, 0.6f);
             int i = items.IndexOf(key);
-            if (Hand != null) Hand.Hold(HandFor(i, cmp), key.transform, Grip);
+            if (Hand != null && !selectedFromDistance) Hand.Hold(HandFor(i, cmp), key.transform, Grip);
             Lift(key, slots[i].position + slots[i].forward * 0.07f + Vector3.up * 0.03f);
         }
 
@@ -507,14 +500,7 @@ namespace SortOrStay
             int correct = 0;
             for (int i = 0; i < n; i++)
             {
-                bool ok = items[i].value == sortedVals[i];
-                if (ok) correct++;
-                if (ledMats != null && i < ledMats.Length && ledMats[i] != null)
-                {
-                    Color c = ok ? ledOn : ledOff;
-                    if (ledMats[i].HasProperty("_BaseColor")) ledMats[i].SetColor("_BaseColor", c);
-                    if (ledMats[i].HasProperty("_EmissionColor")) ledMats[i].SetColor("_EmissionColor", ok ? ledOn * 3f : Color.black);
-                }
+                if (items[i].value == sortedVals[i]) correct++;
             }
 
             if (GameUI.Instance != null)
@@ -526,14 +512,14 @@ namespace SortOrStay
             {
                 string status = Solved ? "<color=#5dff7a>UNLOCKED</color>" : "<color=#ff5a4e>LOCKED</color>";
                 terminal.SetText(
-                    "<b>SECURITY TERMINAL</b>   FLOOR 1\n" +
-                    "> ORDER UNLOCKS.\n" +
-                    "> Arrange the keys from\n   smallest to largest.\n" +
+                    "<b>BUBBLE SORT</b>   FLOOR 1\n" +
+                    "Sort the keys from smallest to largest.\n" +
+                    "Swap adjacent keys if the left key is larger.\n\n" +
                     $"STATUS   {status}\n" +
-                    (Solved ? "" : $"PASS {pass + 1}   COMPARE  {cmp + 1}-{cmp + 2}\n") +
+                    (Solved ? "" : $"PASS {pass + 1}   HOOKS {cmp + 1} AND {cmp + 2}\n") +
                     $"KEYS IN PLACE   {correct}/{n}\n" +
-                    $"SWAPS   {swaps}   COMPARES   {comparisons}\n\n" +
-                    "<size=80%>[ press HINT or H ]</size>");
+                    $"SWAPS {swaps}   COMPARISONS {comparisons}\n\n" +
+                    "<size=80%>Click this monitor or press H for a hint.</size>");
             }
         }
     }

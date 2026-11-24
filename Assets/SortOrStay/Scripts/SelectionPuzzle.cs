@@ -645,9 +645,9 @@ namespace SortOrStay
             if (terminal != null)
             {
                 terminal.SetText(
-                    "<b>SCALE CONTROL</b>   FLOOR 2\n" +
-                    "> Crates go LIGHT to HEAVY.\n" +
-                    "> Each pass: weigh left to right,\n   swap the lightest forward.\n\n" +
+                    "<b>SELECTION SORT</b>   FLOOR 2\n" +
+                    "Sort the crates from lightest to heaviest.\n" +
+                    "Weigh the remaining crates, then\nmove the lightest to the next bay.\n\n" +
                     $"PASS {Mathf.Min(pass + 1, n - 1)}/{n - 1}   NEXT BAY {Mathf.Min(pass + 1, n)}\n" +
                     $"WEIGHED {weighedNow}/{n - pass}   SWAPS {swaps}\n\n" +
                     "<size=80%>[ SCAN = Q ]   [ HINT = H ]</size>");

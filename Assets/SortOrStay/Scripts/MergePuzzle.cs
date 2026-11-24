@@ -626,8 +626,8 @@ namespace SortOrStay
             if (terminal != null)
             {
                 terminal.SetText(
-                    "<b>MERGE CONTROL</b>   FLOOR 4\n" +
-                    "> Split until every block\n   stands alone.  Then merge\n   two runs:  smaller front first.\n\n" +
+                    "<b>MERGE SORT</b>   FLOOR 4\n" +
+                    "Split until each block is on its own.\nMerge two runs by taking the smaller\nfront block each time.\n\n" +
                     $"DOORS   {status}\n" +
                     $"RUNS {runs.Count}   MOVES {moves}\n" +
                     (splitting ? "NEXT:  SPLIT" : Solved ? "SORTED" : "NEXT:  SMALLER FRONT") + "\n\n" +
