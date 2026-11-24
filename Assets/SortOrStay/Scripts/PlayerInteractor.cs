@@ -8,8 +8,9 @@ namespace SortOrStay
     /// Point-and-click: whatever is under the mouse cursor. Mouse-look: whatever the crosshair points at.
     /// Picking is forgiving: if the ray lands on something that can't be used (a shelf, a scale plate),
     /// the nearest usable thing within a few centimetres is chosen instead. The chosen thing gets a bouncing
-    /// marker above it. Using something far away makes the avatar walk over to it first.
-    /// Puzzles also call Use() for number-key shortcuts.
+    /// marker above it. Using a sorting object (key, crate, book, block, bar, button) that is a little too far away
+    /// makes the avatar walk over to it first. Clicking the floor, the stairs or a door never moves the avatar:
+    /// walking is the player's own (W A S D / arrow keys). Puzzles also call Use() for number-key shortcuts.
     public class PlayerInteractor : MonoBehaviour
     {
         public static PlayerInteractor Instance { get; private set; }
@@ -50,7 +51,7 @@ namespace SortOrStay
             }
             else ray = cam.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
 
-            bool hitSomething = Pick(ray, out IInteractable it, out Collider col, out RaycastHit hit);
+            Pick(ray, out IInteractable it, out Collider col, out RaycastHit _);
             if (it != null)
             {
                 Current = it;
@@ -60,7 +61,7 @@ namespace SortOrStay
                     string p = it.Prompt;
                     float d = Flat(transform.position, ClosestPoint(col, transform.position));
                     float use = it is IHandReach hr && hr.ReachDistance > 0f ? hr.ReachDistance : useDistance;
-                    if (!string.IsNullOrEmpty(p) && d > use) p += "   (walks over)";
+                    if (!string.IsNullOrEmpty(p) && d > use && !IsDoor(it)) p += "   (too far:  walk up to it)";
                     ui.prompt = p;
                 }
             }
@@ -74,12 +75,23 @@ namespace SortOrStay
             if (pointer && click && ui != null && ui.IsOverHud(mouse.position.ReadValue())) return;
 
             if (it != null) { Use(it, col); return; }
+            // (clicking the floor or the stairs does nothing: no walking by click)
+        }
 
-            // point-and-click: clicking the floor walks there
-            if (pointer && click && hitSomething && hit.normal.y > 0.6f && controller.canMove)
+        /// Doors are only tried from where the player stands: a click on a door never walks the avatar to it.
+        static bool IsDoor(IInteractable it) => it is Door || it is RoomGate;
+
+        /// A click never walks the avatar anywhere: the player walks (W A S D) and uses what is within reach.
+        /// (Only the editor's hands-on play-test walks over to things by itself.)
+        static bool WalkOver
+        {
+            get
             {
-                pendingTarget = null;
-                controller.WalkToSpot(hit.point);
+#if UNITY_EDITOR
+                return DevAutoPlay.On && DevAutoPlay.Hands;
+#else
+                return false;
+#endif
             }
         }
 
@@ -114,6 +126,7 @@ namespace SortOrStay
                 col = hit.collider;
                 return true;
             }
+            if (hit.normal.y > 0.6f) return true;       // the floor, a landing or a stair: nothing to use there
 
             var near = Physics.OverlapSphere(hit.point, pickRadius, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
             float best = float.MaxValue;
@@ -134,11 +147,25 @@ namespace SortOrStay
             float use = useDistance, approach = approachDistance;
             if (it is IHandReach hr && hr.ReachDistance > 0f) { use = hr.ReachDistance; approach = Mathf.Min(approach, hr.ReachDistance * 0.75f); }
             Vector3 p = ClosestPoint(col, transform.position);
+            if (IsDoor(it))
+            {
+                pendingTarget = null;
+                it.Interact();              // rattles / says why it is locked, from here
+                return;
+            }
             if (Flat(transform.position, p) <= use || controller == null || !controller.canMove)
             {
                 pendingTarget = null;
                 if (controller != null) { controller.StopWalking(); controller.FaceTowards(p); }
                 it.Interact();
+                return;
+            }
+            if (!WalkOver)
+            {
+                // too far: the avatar does not walk there by itself
+                pendingTarget = null;
+                if (controller != null) controller.FaceTowards(p);
+                if (GameUI.Instance != null) GameUI.Instance.Flash("Too far away.  Walk up to it first (W A S D), then click it.");
                 return;
             }
 

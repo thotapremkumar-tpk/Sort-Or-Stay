@@ -10,8 +10,8 @@ namespace SortOrStay
     /// Third-person player built around a realistic human avatar (Microsoft Rocketbox, MIT).
     ///
     /// Two control styles (Tab switches, the choice is remembered):
-    ///   Point and click (default) - the cursor stays visible. Click a thing to walk over and use it,
-    ///                               click the floor to walk there. Right-drag or arrow keys turn the camera,
+    ///   Point and click (default) - the cursor stays visible. Click a thing to use it (the avatar walks
+    ///                               over if it is a little too far; clicking the floor or a door moves no one). Right-drag or arrow keys turn the camera,
     ///                               the scroll wheel zooms. WASD still walks.
     ///   Mouse look                - the old crosshair style: the mouse turns the camera, click uses what the
     ///                               crosshair points at (the avatar still walks over to it by itself).

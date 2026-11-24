@@ -10,8 +10,9 @@ namespace SortOrStay
     /// Floor 4, the Control Room. Eight data blocks stand in the rack row of the merge console, scrambled.
     /// Divide: the SPLIT button halves every run until each block is a run of its own (one block is always sorted).
     /// Conquer: neighbouring runs are merged two at a time. The player keeps taking the smaller of the two FRONT
-    /// blocks down into the merge row; when one run is empty the rest of the other follows without a comparison,
-    /// and the merged run goes back up into the rack as one longer sorted run. Runs of 1 → 2 → 4 → 8.
+    /// blocks down into the merge row; when one run is empty the player takes the rest of the other run down one
+    /// by one, without a comparison (nothing moves by itself), and the merged run goes back up into the rack as one
+    /// longer sorted run. Runs of 1 → 2 → 4 → 8.
     /// The merge row is the extra memory merge sort needs.
     public class MergePuzzle : SortPuzzleBase, IAutoPlayable
     {
@@ -360,17 +361,10 @@ namespace SortOrStay
             if (compared) comparisons++;
             yield return MoveDown(b, fromLeft, true);
 
-            // one run is empty: the rest of the other follows, no comparisons needed
+            // one run is empty: the player takes the rest of the other run down, one block at a time, no comparing
             bool leftDone = li >= LeftRun.len, rightDone = ri >= RightRun.len;
-            if ((leftDone || rightDone) && !(leftDone && rightDone))
-            {
-                Refresh();
-                if (GameUI.Instance != null)
-                    GameUI.Instance.Info($"The {(leftDone ? "left" : "right")} run is empty:  the rest of the {(leftDone ? "right" : "left")} run follows, no comparing needed.");
-                yield return new WaitForSeconds(0.35f);
-                while (li < LeftRun.len) { yield return MoveDown(items[LeftRun.start + li], true, false); yield return new WaitForSeconds(0.06f); }
-                while (ri < RightRun.len) { yield return MoveDown(items[RightRun.start + ri], false, false); yield return new WaitForSeconds(0.06f); }
-            }
+            if (compared && (leftDone || rightDone) && !(leftDone && rightDone) && GameUI.Instance != null)
+                GameUI.Instance.Info($"The {(leftDone ? "left" : "right")} run is empty:  take the rest of the {(leftDone ? "right" : "left")} run down, one by one.  No comparing needed.");
 
             if (li >= LeftRun.len && ri >= RightRun.len) yield return FinishMerge();
             if (!Solved)
@@ -477,7 +471,10 @@ namespace SortOrStay
                 return $"Compare the two front blocks:  {lf.value} (left, blue) and {rf.value} (right, orange).\n" +
                        $"Take the smaller one, {(leftSmaller ? lf.value : rf.value)}:  click it or press {(leftSmaller ? 1 : 2)}.";
             }
-            return "One run is empty:  the rest of the other run follows on its own.";
+            var only = LeftFront ?? RightFront;
+            return only != null
+                ? $"One run is empty:  take the rest of the other run down, one by one, no comparing needed.\nNext:  {only.value}:  click it or press {(only == LeftFront ? 1 : 2)}."
+                : "One run is empty:  take the rest of the other run down, one by one.";
         }
 
         public override void RequestHint()

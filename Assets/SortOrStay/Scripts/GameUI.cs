@@ -244,7 +244,7 @@ namespace SortOrStay
                 if (Time.time < controlsUntil)
                 {
                     string c = promptAtCursor
-                        ? "Click a thing to walk over and use it  ·  Click the floor to walk  ·  Right-drag / arrows turn  ·  Scroll zoom  ·  WASD walk  ·  Space jump  ·  H hint (Ada comes)  ·  T lesson  ·  Tab mouse-look  ·  Esc menu"
+                        ? "Click a thing to use it  ·  Right-drag / arrows turn  ·  Scroll zoom  ·  WASD walk  ·  Space jump  ·  H hint (Ada comes)  ·  T lesson  ·  Tab mouse-look  ·  Esc menu"
                         : "WASD walk  ·  Shift run  ·  Space jump  ·  Mouse / arrows look  ·  Click / E use  ·  H hint  ·  T lesson  ·  V camera  ·  C character  ·  Tab point-and-click  ·  Esc menu";
                     Vector2 sz = sSmall.CalcSize(new GUIContent(c));
                     Rect r = new Rect(28f, H - 28f - 46f, Mathf.Min(sz.x + 36f, W - 56f), 46f);
