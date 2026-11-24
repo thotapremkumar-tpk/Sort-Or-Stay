@@ -22,6 +22,23 @@ namespace SortOrStay
         public bool IsOpen { get; private set; }
         public bool Unlocked { get; private set; }
 
+        // the room behind this door (set by the building): it only shuts once the player is in *this* room.
+        // (Measured from the doorway alone, a player still in the room next door counted as "inside" and the
+        // next room's door shut before they got to it.)
+        bool hasRoom;
+        Vector3 roomMin, roomMax;
+
+        public void SetRoom(Vector3 min, Vector3 max)
+        {
+            hasRoom = true;
+            roomMin = min;
+            roomMax = max;
+        }
+
+        bool PlayerInRoom(Vector3 p) =>
+            p.x > roomMin.x + 0.3f && p.x < roomMax.x - 0.3f && p.z > roomMin.z + 0.3f && p.z < roomMax.z - 0.3f &&
+            p.y > roomMin.y - 0.6f && p.y < roomMax.y;
+
         Vector3 closedPos;
         Material lampMat;
         bool closedBehind;
@@ -69,7 +86,8 @@ namespace SortOrStay
             Vector3 d = pc.transform.position - transform.position;
             if (Mathf.Abs(d.y) > 1.6f) return;
             Vector3 side = Vector3.Cross(Vector3.up, inward);
-            if (Vector3.Dot(d, inward) > closeWhenInside && Mathf.Abs(Vector3.Dot(d, side)) < 12f)
+            bool inside = hasRoom ? PlayerInRoom(pc.transform.position) : Mathf.Abs(Vector3.Dot(d, side)) < 3f;
+            if (Vector3.Dot(d, inward) > closeWhenInside && inside)
             {
                 // wait for the guide to come in too (but not for ever)
                 if (playerInSince < 0f) playerInSince = Time.time;

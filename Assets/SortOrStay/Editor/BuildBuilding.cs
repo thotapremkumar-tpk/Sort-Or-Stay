@@ -15,10 +15,14 @@ namespace SortOrStayEditor
     /// floor, Floor 5 (quick sort) the ground floor. Every floor has a hallway along the front and three rooms behind
     /// it, side by side: Room 1 deals the algorithm's best case, Room 2 its average case, Room 3 its worst case. Each
     /// room is the floor's own room (the same builder as its standalone scene) with a doorway from the hallway that
-    /// opens when the room before it is done. A stair tower on the front of the building links the hallways: the
-    /// hallway door to the stairs opens after Room 3, two flights with a half-landing go down one storey, and the
-    /// lower flight ends at the next hallway. On the ground floor the hallway door leads into a corridor under the
-    /// stairs and out to the street. Professor Ada, the guide, starts next to the player.
+    /// opens when the room before it is done.
+    /// The floors zig-zag: the stairs down start right across the hallway from Room 3, and they end on the floor below
+    /// right across the hallway from that floor's Room 1. So the rooms run left to right on Floors 1, 3 and 5 and
+    /// right to left on Floors 2 and 4, and there are two stair towers on the front of the building: the right one
+    /// (Floor 1 to 2, Floor 3 to 4, and the way out to the street from Floor 5) and the left one (Floor 2 to 3,
+    /// Floor 4 to 5). In a tower, the hallway door to the stairs opens after Room 3, two flights with a half-landing
+    /// go down one storey, and the lower flight ends at the next hallway. Professor Ada, the guide, starts next to
+    /// the player.
     /// Menu: Sort or Stay > Build Building (all 5 floors).
     public static class BuildBuilding
     {
@@ -47,11 +51,19 @@ namespace SortOrStayEditor
         const float RUN = STEPS * GOING;      // 3.92
         const float FAR = LAND + RUN + 1.6f;  // inner face of the far wall (half-landing 1.6 deep)
         const float TOP = 20f + 3f + T;       // tower roof
+        const float RIGHT_DX = 20.9f;         // the right tower: its lane A (the way down) is centred at x = 21.0
 
         static Material mWall, mFloorTile, mStep, mNosing, mRail, mDark, mSign, mExit, mDoor, mFrame, mGlass, mLight,
                         mPavement, mRoad, mKerb, mFacade, mLamp, mBench, mRed, mHallWall, mHallFloor, mStripe;
 
         static float Riser => STOREY * 0.5f / STEPS;
+
+        /// The tower holding the stairs down from floor k (the street exit for the ground floor): k even, the right one.
+        static float TowerDX(int k) => k % 2 == 0 ? RIGHT_DX : 0f;
+
+        /// Where room r of floor k stands: slot 0 is the left end, slot 2 the right end. Left to right on Floors 1, 3
+        /// and 5, right to left on Floors 2 and 4, so Room 3 is at the stairs down and Room 1 at the stairs from above.
+        static int Slot(int k, int r) => k % 2 == 0 ? r : ROOMS - 1 - r;
 
         [MenuItem("Sort or Stay/Build Building (all 5 floors)")]
         public static void Build()
@@ -86,7 +98,7 @@ namespace SortOrStayEditor
                     parts[k] = new FloorParts[ROOMS];
                     for (int r = 0; r < ROOMS; r++)
                     {
-                        NoSideWindows = r < ROOMS - 1;                    // a room on the right: no windows that way
+                        NoSideWindows = Slot(k, r) < ROOMS - 1;           // a room on the right: no windows that way
                         var before = new HashSet<GameObject>(scene.GetRootGameObjects());
                         var p = builders[k]();
                         MakeMaterials();                                  // the floor builders share the Kit statics
@@ -95,7 +107,7 @@ namespace SortOrStayEditor
                             if (!before.Contains(go) && go != p.root.gameObject) go.transform.SetParent(p.root, true);
                         p.root.name = $"{p.root.name}_Room{r + 1}";
                         p.root.SetParent(floorRoot, true);
-                        p.root.position = new Vector3(RoomX(p, r), LevelY[k], RoomZ(p));
+                        p.root.position = new Vector3(RoomX(p, Slot(k, r)), LevelY[k], RoomZ(p));
 
                         // the room's case and its questions
                         var pz = p.puzzle;
@@ -112,11 +124,14 @@ namespace SortOrStayEditor
             }
             finally { BuildingMode = false; NoSideWindows = false; }
 
-            var tower = Group("StairTower", building);
-            tower.position = new Vector3(0f, 0f, ZF);
-            TowerShell(tower);
-            for (int k = 0; k < 4; k++) Shaft(tower, k, parts[k + 1][0]);
-            ExitCorridor(tower);
+            var towerL = Group("StairTower_Left", building);
+            towerL.position = new Vector3(0f, 0f, ZF);
+            var towerR = Group("StairTower_Right", building);
+            towerR.position = new Vector3(RIGHT_DX, 0f, ZF);
+            TowerShell(towerL, new[] { 1, 3 }, false);
+            TowerShell(towerR, new[] { 0, 2 }, true);
+            for (int k = 0; k < 4; k++) Shaft(TowerDX(k) > 0f ? towerR : towerL, k, parts[k + 1][0]);
+            ExitCorridor(towerR);
             float bx0 = float.MaxValue, bx1 = float.MinValue;
             for (int k = 0; k < 5; k++) { bx0 = Mathf.Min(bx0, HallX0(parts[k]) - T); bx1 = Mathf.Max(bx1, HallX1(parts[k]) + T); }
             Street(building, bx0, bx1);
@@ -145,7 +160,7 @@ namespace SortOrStayEditor
             lm.nextFloorLabel = "";
             lm.door = parts[4][ROOMS - 1].exitDoor;
             lm.player = player;
-            StreetExitTrigger(tower, lm);
+            StreetExitTrigger(towerR, lm);
 
             var bm = sys.gameObject.AddComponent<BuildingManager>();
             bm.player = player;
@@ -169,8 +184,8 @@ namespace SortOrStayEditor
 
         // ============================================================ layout
 
-        /// Rooms sit side by side along +x, Room 1 at x = 0 (across the hallway from the stairs), walls back to back.
-        static float RoomX(FloorParts p, int r) => r * (p.width + 2f * T);
+        /// Room slots sit side by side along +x, slot 0 at x = 0, walls back to back (see Slot for which room is where).
+        static float RoomX(FloorParts p, int slot) => slot * (p.width + 2f * T);
 
         /// Every room's front wall is the hallway's back wall: a room's centre sits half its depth (plus the wall) behind ZR.
         static float RoomZ(FloorParts p) => ZR - (p.depth * 0.5f + T);
@@ -208,7 +223,7 @@ namespace SortOrStayEditor
             for (int r = 0; r < ROOMS; r++)
             {
                 var p = ps[r];
-                float xr = RoomX(p, r), zc = RoomZ(p), inner = ZR - T;
+                float xr = RoomX(p, Slot(k, r)), zc = RoomZ(p), inner = ZR - T;
                 float ex = xr + p.entranceX;
                 var c = RoomCases[r];
                 f.rooms[r] = new BuildingManager.Room
@@ -232,29 +247,30 @@ namespace SortOrStayEditor
             }
 
             float mid = y - STOREY * 0.5f;
+            float xa = XA + TowerDX(k), xb = XB + TowerDX(k);       // this floor's tower: lane A down, lane B arriving below
             if (k < 4)
             {
                 float yb = LevelY[k + 1];
                 f.stairsPath = new[]
                 {
-                    new Vector3(XA, y, ZH),                           // in the hallway, in front of the stairs door
-                    new Vector3(XA, y, ZF + 0.8f),                    // landing
-                    new Vector3(XA, mid, ZF + LAND + RUN + 0.6f),     // down flight A to the half-landing
-                    new Vector3(XB, mid, ZF + LAND + RUN + 0.6f),     // across
-                    new Vector3(XB, yb, ZF + LAND - 0.4f),            // down flight B
-                    new Vector3(EntranceX, yb, ZF - T - 0.7f),        // through the hallway door
-                    new Vector3(EntranceX, yb, ZH),                   // into the next floor's hallway
+                    new Vector3(xa, y, ZH),                           // in the hallway, in front of the stairs door (across from Room 3)
+                    new Vector3(xa, y, ZF + 0.8f),                    // landing
+                    new Vector3(xa, mid, ZF + LAND + RUN + 0.6f),     // down flight A to the half-landing
+                    new Vector3(xb, mid, ZF + LAND + RUN + 0.6f),     // across
+                    new Vector3(xb, yb, ZF + LAND - 0.4f),            // down flight B
+                    new Vector3(xb, yb, ZF - T - 0.7f),               // through the hallway door
+                    new Vector3(xb, yb, ZH),                          // into the next floor's hallway (across from its Room 1)
                 };
             }
             else
             {
                 f.stairsPath = new[]
                 {
-                    new Vector3(XA, 0f, ZH),                          // in the hallway, in front of the street door
-                    new Vector3(XA, 0f, ZF + 0.9f),                   // the corridor under the stairs
-                    new Vector3(XA, 0f, ZF + FAR - 0.5f),
-                    new Vector3(XA, 0f, ZF + FAR + T + 1.0f),         // out through the street door
-                    new Vector3(XA, 0f, ZF + FAR + T + 2.6f),         // on the pavement
+                    new Vector3(xa, 0f, ZH),                          // in the hallway, in front of the street door
+                    new Vector3(xa, 0f, ZF + 0.9f),                   // the corridor under the stairs
+                    new Vector3(xa, 0f, ZF + FAR - 0.5f),
+                    new Vector3(xa, 0f, ZF + FAR + T + 1.0f),         // out through the street door
+                    new Vector3(xa, 0f, ZF + FAR + T + 2.6f),         // on the pavement
                 };
             }
             return f;
@@ -369,9 +385,11 @@ namespace SortOrStayEditor
             Cube("Wall_End_L", new Vector3(x0 - T * 0.5f, wy, (ZR - T + ZF) * 0.5f), new Vector3(T, wh, ZF - ZR + T), mHallWall, g);
             Cube("Wall_End_R", new Vector3(x1 + T * 0.5f, wy, (ZR - T + ZF) * 0.5f), new Vector3(T, wh, ZF - ZR + T), mHallWall, g);
 
-            // front wall: holes for the stairs door (lane A) and the door from the stairs above (lane B)
-            var holes = new List<(float c, float w, float h)> { (XA, GATE_W, GATE_H) };
-            if (k > 0) holes.Add((EntranceX, EntranceW, EntranceH));
+            // front wall: holes for the stairs door (lane A of this floor's tower, across from Room 3) and the door
+            // from the stairs above (lane B of the tower above, across from Room 1)
+            float xs = XA + TowerDX(k), xe = k > 0 ? XB + TowerDX(k - 1) : 0f;
+            var holes = new List<(float c, float w, float h)> { (xs, GATE_W, GATE_H) };
+            if (k > 0) holes.Add((xe, EntranceW, EntranceH));
             FrontWall(g, x0 - T, x1 + T, y - T, yTop, y, ZF - T * 0.5f, holes);
 
             // a guiding stripe along the floor and skirting on the front wall
@@ -388,7 +406,7 @@ namespace SortOrStayEditor
 
             // the stairs door (sliding into the wall towards -x), its lamp and its sign (read from the hallway)
             var sg = Group("StairsDoor", g);
-            sg.position = new Vector3(XA, y, ZF - T * 0.5f);
+            sg.position = new Vector3(xs, y, ZF - T * 0.5f);
             var panel = DoorFrameAndPanel(sg, GATE_W, GATE_H, T + 0.12f);
             var lamp = Sphere("Lamp", new Vector3(GATE_W * 0.5f + 0.2f, GATE_H + 0.12f, -T * 0.5f - 0.05f), 0.08f, mRed, sg);
             Cube("Lamp_Base", new Vector3(GATE_W * 0.5f + 0.2f, GATE_H + 0.12f, -T * 0.5f - 0.01f), new Vector3(0.13f, 0.13f, 0.02f), mFrame, sg, false);
@@ -411,12 +429,13 @@ namespace SortOrStayEditor
 
             // floor plan on the front wall, between the two doors' signs: which room is which
             var plan = Group("FloorPlan", g);
-            plan.position = new Vector3(XA - 2.6f, y + 1.55f, ZF - T - 0.02f);
+            plan.position = new Vector3(xs - 2.6f, y + 1.55f, ZF - T - 0.02f);
             Cube("Board", Vector3.zero, new Vector3(2.4f, 1.0f, 0.03f), mDark, plan, false);
             Text("Title", plan, new Vector3(0f, 0.33f, -0.018f), new Vector2(2.2f, 0.18f), $"FLOOR {k + 1}  ·  {GuideNpc.AlgorithmName(k + 1).ToUpperInvariant()}",
                  Color.white, TextAlignmentOptions.Center, true);
             Text("Rooms", plan, new Vector3(0f, -0.08f, -0.018f), new Vector2(2.2f, 0.56f),
-                 "<color=#7FE0A0>ROOM 1  best case</color>\n<color=#9CC4FF>ROOM 2  average case</color>\n<color=#FF9C8C>ROOM 3  worst case</color>",
+                 k % 2 == 0 ? "<color=#7FE0A0>ROOM 1  best case</color>   →\n<color=#9CC4FF>ROOM 2  average case</color>   →\n<color=#FF9C8C>ROOM 3  worst case</color>   ·   stairs"
+                           : "stairs   ·   <color=#FF9C8C>ROOM 3  worst case</color>\n←   <color=#9CC4FF>ROOM 2  average case</color>\n←   <color=#7FE0A0>ROOM 1  best case</color>",
                  Color.white, TextAlignmentOptions.Center, false);
 
             // the door from the stairs above (stands open while you come down, shuts once you're in the hallway)
@@ -424,7 +443,7 @@ namespace SortOrStayEditor
             if (k > 0)
             {
                 var eg = Group("DoorFromStairs", g);
-                eg.position = new Vector3(EntranceX, y, ZF - T * 0.5f);
+                eg.position = new Vector3(xe, y, ZF - T * 0.5f);
                 float w = EntranceW, h = EntranceH;
                 var ep = DoorFrameAndPanel(eg, w, h, T + 0.12f);
                 var es = Group("FloorSign", eg);
@@ -462,9 +481,10 @@ namespace SortOrStayEditor
 
         // ============================================================ stair tower
 
-        /// Walls, roof, ground, the wall between the two flights and the far wall with its windows.
+        /// Walls, roof, ground, the wall between the two flights and the far wall with its windows (at the
+        /// half-landing of each storey of stairs in this tower), and on the right tower the street door.
         /// (The hallways' front walls close the tower on the building side.)
-        static void TowerShell(Transform t)
+        static void TowerShell(Transform t, int[] shafts, bool street)
         {
             var g = Group("Shell", t);
             float x0 = LA0 - T, x1 = LB1 + T, w = x1 - x0, xc = (x0 + x1) * 0.5f;
@@ -476,18 +496,26 @@ namespace SortOrStayEditor
             Cube("Wall_Right", new Vector3(LB1 + T * 0.5f, hTot * 0.5f - T, depth * 0.5f), new Vector3(T, hTot, depth), mWall, g);
             Cube("Wall_Middle", new Vector3((LA1 + LB0) * 0.5f, hTot * 0.5f - T, (LAND + RUN) * 0.5f), new Vector3(LB0 - LA1, hTot, LAND + RUN), mWall, g);
 
-            // far wall: the street door at the bottom of lane A, a window at every half-landing and at the top
-            var holes = new List<(float x0, float x1, float y0, float y1, bool glass)>
-            {
-                (XA - 0.8f, XA + 0.8f, 0f, 2.2f, false)
-            };
-            for (int k = 0; k < 4; k++)
+            // far wall: the street door at the bottom of lane A (right tower), a window at every half-landing and
+            // one above the highest landing
+            var holes = new List<(float x0, float x1, float y0, float y1, bool glass)>();
+            if (street) holes.Add((XA - 0.8f, XA + 0.8f, 0f, 2.2f, false));
+            foreach (int k in shafts)
             {
                 float mid = LevelY[k] - STOREY * 0.5f;
                 holes.Add((XA - 0.6f, XA + 1.1f, mid + 0.9f, mid + 2.4f, true));      // over lane A; the sign hangs on lane B's wall
             }
-            holes.Add((XA - 0.6f, XA + 1.1f, LevelY[0] + 0.9f, LevelY[0] + 2.4f, true));
+            int topK = shafts.Min();
+            holes.Add((XA - 0.6f, XA + 1.1f, LevelY[topK] + 0.9f, LevelY[topK] + 2.4f, true));
             FarWall(g, holes, x0, x1);
+
+            // right tower: lane B is closed off at the bottom, so the street corridor stays a corridor
+            if (street)
+            {
+                int low = shafts.Max();
+                float under = LevelY[low] - STOREY * 0.5f - 0.25f;
+                Cube("Wall_UnderLaneB", new Vector3(XB, under * 0.5f, LAND + RUN + T * 0.5f), new Vector3(LANE, under, T), mWall, g);
+            }
         }
 
         static void FarWall(Transform g, List<(float x0, float x1, float y0, float y1, bool glass)> holes, float x0, float x1)
@@ -515,8 +543,11 @@ namespace SortOrStayEditor
             float yTop = LevelY[k], yBot = LevelY[k + 1], mid = yTop - STOREY * 0.5f, r = Riser;
             var g = Group($"Stairs_F{k + 1}_to_F{k + 2}", t);
 
-            // landing outside floor k's exit door (lane A)
+            // landing outside floor k's exit door (lane A), with a ceiling over it (the towers skip storeys: no open
+            // shaft above the doors)
             Cube("Landing_Top", new Vector3(XA, yTop - 0.125f, LAND * 0.5f), new Vector3(LANE, 0.25f, LAND), mFloorTile, g);
+            if (k > 0) Cube("Ceiling_Top", new Vector3(XA, yTop + 3f + T * 0.5f, LAND * 0.5f), new Vector3(LANE, T, LAND), mWall, g);
+            Cube("Ceiling_Bottom", new Vector3(XB, yBot + 3f + T * 0.5f, LAND * 0.5f), new Vector3(LANE, T, LAND), mWall, g);
 
             // flight A: outward, down to the half-landing
             for (int i = 0; i < STEPS; i++)
@@ -561,7 +592,7 @@ namespace SortOrStayEditor
             s1.localPosition = new Vector3(XA, signY, LAND - 0.1f);
             Cube("Plate", Vector3.zero, new Vector3(LANE - 0.3f, 0.36f, 0.03f), mSign, s1, false);
             Text("Text", s1, new Vector3(0f, 0f, -0.018f), new Vector2(LANE - 0.4f, 0.24f), "DOWN  ↓   " + next, Color.white, TextAlignmentOptions.Center, true);
-            float ceiling = k == 0 ? TOP : yTop + STOREY - 0.25f;        // the roof, or the landing slab above
+            float ceiling = k == 0 ? TOP : yTop + 3f;                     // the roof, or the ceiling over the landing
             float hang = ceiling - (signY + 0.18f);
             CylY("Hanger_L", new Vector3(XA - 0.8f, signY + 0.18f + hang * 0.5f, LAND - 0.1f), 0.015f, hang, mRail, g);
             CylY("Hanger_R", new Vector3(XA + 0.8f, signY + 0.18f + hang * 0.5f, LAND - 0.1f), 0.015f, hang, mRail, g);
@@ -619,15 +650,16 @@ namespace SortOrStayEditor
             for (int i = 0; i < lines; i++)
                 Cube("RoadLine_" + i, new Vector3(sx0 + 1.1f + i * 4.4f, -0.095f, zf + 12f), new Vector3(2.2f, 0.01f, 0.14f), mKerb, g, false);
 
-            // the building's front either side of the stair tower, and its sides back to the hallways
-            float hb = TOP + T, tx0 = LA0 - T, tx1 = LB1 + T;
+            // the building's front either side of and between the two stair towers, and its sides back to the hallways
+            float hb = TOP + T, tx0 = LA0 - T, tx1 = LB1 + T, rx0 = tx0 + RIGHT_DX, rx1 = tx1 + RIGHT_DX;
             Cube("Facade_L", new Vector3((bx0 + tx0) * 0.5f, hb * 0.5f - 0.2f, zf - T * 0.5f), new Vector3(tx0 - bx0, hb, T), mFacade, g);
-            Cube("Facade_R", new Vector3((tx1 + bx1) * 0.5f, hb * 0.5f - 0.2f, zf - T * 0.5f), new Vector3(bx1 - tx1, hb, T), mFacade, g);
+            Cube("Facade_M", new Vector3((tx1 + rx0) * 0.5f, hb * 0.5f - 0.2f, zf - T * 0.5f), new Vector3(rx0 - tx1, hb, T), mFacade, g);
+            Cube("Facade_R", new Vector3((rx1 + bx1) * 0.5f, hb * 0.5f - 0.2f, zf - T * 0.5f), new Vector3(bx1 - rx1, hb, T), mFacade, g);
             Cube("Facade_SideL", new Vector3(bx0 + T * 0.5f, hb * 0.5f - 0.2f, (ZF + zf) * 0.5f), new Vector3(T, hb, zf - ZF), mFacade, g);
             Cube("Facade_SideR", new Vector3(bx1 - T * 0.5f, hb * 0.5f - 0.2f, (ZF + zf) * 0.5f), new Vector3(T, hb, zf - ZF), mFacade, g);
             Cube("Facade_Base", new Vector3((bx0 + bx1) * 0.5f, 0.3f, zf + 0.04f), new Vector3(bx1 - bx0, 0.6f, 0.06f), mDark, g, false);
             var name = Group("BuildingName", g);
-            name.localPosition = new Vector3(tx1 + Mathf.Min(6f, (bx1 - tx1) * 0.5f), 3.2f, zf + 0.02f);
+            name.localPosition = new Vector3((tx1 + rx0) * 0.5f, 3.2f, zf + 0.02f);
             name.localRotation = Quaternion.Euler(0f, 180f, 0f);
             Text("Text", name, Vector3.zero, new Vector2(6f, 0.8f), "SORT  OR  STAY", new Color(0.20f, 0.20f, 0.22f), TextAlignmentOptions.Center, true);
 
@@ -640,7 +672,7 @@ namespace SortOrStayEditor
                 Cube("Head", new Vector3(0f, 3.88f, -0.7f), new Vector3(0.3f, 0.12f, 0.45f), mLamp, l, false);
             }
             var b = Group("Bench", g);
-            b.localPosition = new Vector3(4.2f + 4f, 0f, zf + 4.8f);
+            b.localPosition = new Vector3(rx1 + 2.6f, 0f, zf + 4.8f);
             Cube("Seat", new Vector3(0f, 0.45f, 0f), new Vector3(1.6f, 0.06f, 0.42f), mBench, b);
             Cube("Back", new Vector3(0f, 0.75f, 0.19f), new Vector3(1.6f, 0.4f, 0.05f), mBench, b, false);
             Cube("Leg_L", new Vector3(-0.7f, 0.22f, 0f), new Vector3(0.06f, 0.44f, 0.4f), mRail, b, false);

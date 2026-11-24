@@ -87,6 +87,8 @@ namespace SortOrStay
                 var f = floors[i];
                 foreach (var r in f.rooms)
                     if (r.puzzle != null) r.puzzle.inputEnabled = false;
+                foreach (var r in f.rooms)
+                    if (r.entrance != null) r.entrance.SetRoom(r.roomMin, r.roomMax);
                 f.lights = new List<Light>();
                 if (f.root != null)
                     foreach (var l in f.root.GetComponentsInChildren<Light>(true))
@@ -243,8 +245,10 @@ namespace SortOrStay
                 inRoom = false;
                 roomDone = false;
                 ApplyHud(false);
+                // the rooms run left to right on some floors and right to left on others (the stairs zig-zag)
+                string side = next.entranceOutside.x > room.exitOutside.x ? "right" : "left";
                 if (ui != null)
-                    ui.SetObjective($"The door is open.  Go to <b>Room {next.number}  ·  {SortPuzzleBase.CaseLabel(next.sortCase)}</b>:  out into the hallway, the next door on the right.");
+                    ui.SetObjective($"The door is open.  Go to <b>Room {next.number}  ·  {SortPuzzleBase.CaseLabel(next.sortCase)}</b>:  out into the hallway, the next door on the {side}.");
             }
             else
             {
@@ -255,10 +259,10 @@ namespace SortOrStay
                     if (!lastFloor)
                     {
                         var below = floors[CurrentIndex + 1];
-                        ui.SetObjective($"Floor {f.number} done.  Back along the hallway to the <b>stairs</b>, and down to <b>Floor {below.number}  ·  {GuideNpc.AlgorithmName(below.number)}</b>.");
+                        ui.SetObjective($"Floor {f.number} done.  The <b>stairs</b> are right across the hallway from Room 3:  down to <b>Floor {below.number}  ·  {GuideNpc.AlgorithmName(below.number)}</b>.");
                         ui.Subtitle($"Down the stairs:  Floor {below.number}.", 3.5f);
                     }
-                    else ui.SetObjective("All five floors done.  Back along the hallway, through the green door and out to the street:  you're free.");
+                    else ui.SetObjective("All five floors done.  Through the green door across the hallway and out to the street:  you're free.");
                 }
             }
         }
