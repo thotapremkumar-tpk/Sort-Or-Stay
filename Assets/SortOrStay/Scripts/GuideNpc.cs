@@ -57,6 +57,17 @@ namespace SortOrStay
         public bool LessonOpen => lessonOpen;
         public bool MenuOpen => menuOpen;
         public bool DialogOpen => convoOpen;
+        public int LessonStepIndex => lessonStep;
+        public bool LessonOnSummary => lessonTable;
+
+        /// Jump the open lesson to its best / average / worst summary.
+        public void LessonToSummary()
+        {
+            if (!lessonOpen || lessonTable) return;
+            lessonTable = true;
+            lessonPlaying = false;
+            SpeakLessonLine();
+        }
         public string DialogLine => convoOpen && convoIdx < convo.Count ? convo[convoIdx].text : "";
         public bool Speaking => current != null;
 

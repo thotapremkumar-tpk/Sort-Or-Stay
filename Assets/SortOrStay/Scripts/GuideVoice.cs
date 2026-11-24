@@ -97,6 +97,9 @@ namespace SortOrStay
         {
             get
             {
+#if UNITY_EDITOR
+                if (DevRecorder.On) return DevRecorder.VoiceBusy;
+#endif
                 var l = current;
                 if (l == null) return false;
                 // a line never "speaks" for longer than it possibly could (keeps the lesson from waiting forever)
@@ -110,12 +113,13 @@ namespace SortOrStay
         public static void Speak(string rich)
         {
             Stop();
-            if (!On || !Supported) return;
-#if UNITY_EDITOR
-            if (DevAutoPlay.On) return;                 // the play-test tool runs silent
-#endif
             string text = ForSpeech(rich);
             if (string.IsNullOrWhiteSpace(text)) return;
+#if UNITY_EDITOR
+            if (DevRecorder.On) { DevRecorder.Say(text, IsMac ? voice : null); return; }   // into the gameplay video
+            if (DevAutoPlay.On) return;                 // the play-test tool runs silent
+#endif
+            if (!On || !Supported) return;
 
             if (problem != null && !problemShown && GameUI.Instance != null)
             {
@@ -208,6 +212,9 @@ namespace SortOrStay
         /// Stop talking now.
         public static void Stop()
         {
+#if UNITY_EDITOR
+            DevRecorder.StopVoice();
+#endif
             var l = current;
             current = null;
             if (l == null) return;

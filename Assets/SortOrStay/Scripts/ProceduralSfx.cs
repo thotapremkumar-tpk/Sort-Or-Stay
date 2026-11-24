@@ -205,9 +205,14 @@ namespace SortOrStay
 
         // ------------------------------------------------------------ playback
 
+        /// Every sound played (the editor's video recorder mixes them into its sound track).
+        public static event Action<AudioClip, Vector3, float> Played;
+
         public static void Play(AudioClip clip, Vector3 pos, float volume = 0.8f)
         {
-            if (clip != null) AudioSource.PlayClipAtPoint(clip, pos, volume);
+            if (clip == null) return;
+            AudioSource.PlayClipAtPoint(clip, pos, volume);
+            Played?.Invoke(clip, pos, volume);
         }
 
         /// Plays right at the listener (UI feedback).

@@ -105,6 +105,9 @@ namespace SortOrStay
         /// Ada reads the questions and her answers aloud (when her dialogs and voice are on).
         static void Voice(string text)
         {
+#if UNITY_EDITOR
+            if (DevRecorder.On) return;                 // the gameplay video keeps the questions short
+#endif
             if (GuideNpc.DialogsOn) GuideVoice.Speak(text);
         }
 

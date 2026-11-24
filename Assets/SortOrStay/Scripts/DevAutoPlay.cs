@@ -1,4 +1,5 @@
 #if UNITY_EDITOR
+using System.Collections.Generic;
 using System.IO;
 using System.Text.RegularExpressions;
 using UnityEngine;
@@ -16,6 +17,7 @@ namespace SortOrStay
     /// real stairs to the next floor's entrance (or out to the street), waypoint by waypoint.
     /// Every step, the debrief text, warnings and errors go to Logs/SortOrStay_autoplay.txt, and Game-view
     /// screenshots of each stage go to Screenshots/ in the project folder. Never part of a build.
+    [DefaultExecutionOrder(10000)]          // LateUpdate after the player's camera (the recording's director moves it)
     public class DevAutoPlay : MonoBehaviour
     {
         public const string PrefKey = "SortOrStay.DevAutoPlay";
@@ -99,6 +101,7 @@ namespace SortOrStay
         {
             exitCalled = popupDone = shotStart = shotMid = shotSolved = pending = false;
             quizShot = quizWrongDone = false;
+            hasTargetPos = false;
             popupSince = solvedSince = -1f;
             steps = actions = 0;
             sceneStart = Time.time;
@@ -116,6 +119,29 @@ namespace SortOrStay
             try { File.AppendAllText(LogPath, $"{System.DateTime.Now:HH:mm:ss.f}  {line}\n"); }
             catch (System.Exception) { }
         }
+
+        // recording the gameplay video: slower, readable pacing on the video's own clock
+        static bool Rec => DevRecorder.On;
+        static float Now => Rec ? DevRecorder.Clock : Time.unscaledTime;
+        float dialogQuietSince = -1f, summaryQuietSince = -1f;
+        string lingerKey;
+        float lingerUntil;
+        bool hintShown;
+
+        // recording: the camera director (turns to the sorting; a front camera shows the labelled side)
+        float frontK;
+        bool frontInit;
+        Vector3 frontPos, frontVel;
+        Quaternion frontRot;
+        float frontFov = 50f;
+        int frontSide = 1;
+        string frontRoom;
+        float camYaw, camPitch = 12f, yawVel, pitchVel;
+        bool camInit;
+        Vector3 lastTargetPos;
+        bool hasTargetPos;
+        SortPuzzleBase focusFor;
+        Vector3 focusCenter;
 
         string Label => BuildingManager.Instance != null ? $"{scene}_F{BuildingManager.Instance.CurrentIndex + 1}R{BuildingManager.Instance.RoomIndex + 1}" : scene;
 
@@ -145,11 +171,15 @@ namespace SortOrStay
             if (!On) return;
             var ui = GameUI.Instance;
             var b = BuildingManager.Instance;
+            if (Rec) Director(b);
 
-            var intro = FindAnyObjectByType<LevelIntro>();
-            if (intro != null) intro.Skip();
-            var wake = FindAnyObjectByType<IntroSequence>();
-            if (wake != null && wake.enabled) wake.Skip();
+            if (!Rec)                                // the video keeps the wake-up scene and the floor titles
+            {
+                var intro = FindAnyObjectByType<LevelIntro>();
+                if (intro != null) intro.Skip();
+                var wake = FindAnyObjectByType<IntroSequence>();
+                if (wake != null && wake.enabled) wake.Skip();
+            }
 
             // a new floor or room of the building
             if (b != null)
@@ -177,9 +207,10 @@ namespace SortOrStay
             var guide = GuideNpc.Instance;
             if (guide != null && guide.LessonOpen)
             {
-                if (lessonSince < 0f) { lessonSince = Time.unscaledTime; Log("guide lesson open"); }
-                if (!lessonShot && Time.unscaledTime > lessonSince + 1.2f) { lessonShot = true; Shot("1b_lesson"); }
-                if (Time.unscaledTime > lessonSince + 2.4f)
+                if (lessonSince < 0f) { lessonSince = Now; summaryQuietSince = -1f; Log("guide lesson open"); }
+                if (!lessonShot && Now > lessonSince + (Rec ? 6f : 1.2f)) { lessonShot = true; Shot("1b_lesson"); }
+                if (Rec) RecLesson(guide);
+                else if (Now > lessonSince + 2.4f)
                 {
                     guide.CloseLesson();
                     lessonSince = -1f;
@@ -194,9 +225,19 @@ namespace SortOrStay
             if (guide != null && guide.DialogOpen)
             {
                 string line = Plain(guide.DialogLine);
-                if (line != lastDialogLine) { lastDialogLine = line; dialogLineSince = Time.unscaledTime; Log($"  ADA:  {line}"); }
-                if (!dialogShot && Time.unscaledTime > dialogLineSince + 0.6f) { dialogShot = true; Shot("1a_dialog"); }
-                if (Time.unscaledTime > dialogLineSince + 0.9f) guide.DialogNext();     // the first call finishes the typing, the next moves on
+                if (line != lastDialogLine) { lastDialogLine = line; dialogLineSince = Now; dialogQuietSince = -1f; Log($"  ADA:  {line}"); }
+                if (!dialogShot && Now > dialogLineSince + (Rec ? 2f : 0.6f)) { dialogShot = true; Shot("1a_dialog"); }
+                if (Rec)
+                {
+                    // the video: each line stays until she has said it, then a short breath
+                    if (GuideVoice.Speaking) dialogQuietSince = -1f;
+                    else if (dialogQuietSince < 0f) dialogQuietSince = Now;
+                    float least = Mathf.Max(1.6f, line.Length / 20f);
+                    bool wasVoiced = dialogQuietSince > dialogLineSince + 0.5f;      // (no voice: give it reading time instead)
+                    if (dialogQuietSince >= 0f && Now > dialogQuietSince + 0.7f && Now > dialogLineSince + 1.2f && (wasVoiced || Now > dialogLineSince + least))
+                        guide.DialogNext();
+                }
+                else if (Now > dialogLineSince + 0.9f) guide.DialogNext();     // the first call finishes the typing, the next moves on
                 if (walking) resumeWalk = true;
                 return;
             }
@@ -216,7 +257,8 @@ namespace SortOrStay
                     endLogged = true;
                     Log("END CARD shown.  Scoreboard:\n" + Plain(LevelManager.Scoreboard()));
                 }
-                if (!shotEnd && Time.time > endSince + 0.8f) { shotEnd = true; Shot("4_endcard"); }
+                if (!shotEnd && Time.time > endSince + (Rec ? 2.5f : 0.8f)) { shotEnd = true; Shot("4_endcard"); }
+                if (Rec && Time.time > endSince + 8f) DevRecorder.Finish();       // the video ends on the end card
                 return;
             }
 
@@ -224,11 +266,11 @@ namespace SortOrStay
             {
                 if (popupSince < 0f)
                 {
-                    popupSince = Time.unscaledTime;
+                    popupSince = Now;
                     Log($"popup open:  {Plain(ui.PopupTitle)}\n{Plain(ui.PopupBody)}");
                 }
-                if (!shotSolved && Time.unscaledTime > popupSince + 0.8f) { shotSolved = true; Shot("3_debrief"); }
-                if (Time.unscaledTime > popupSince + 2.5f) { ui.ClosePopup(); popupSince = -1f; popupDone = true; Log("popup closed"); }
+                if (!shotSolved && Now > popupSince + (Rec ? 1.5f : 0.8f)) { shotSolved = true; Shot("3_debrief"); }
+                if (Now > popupSince + (Rec ? 5f : 2.5f)) { ui.ClosePopup(); popupSince = -1f; popupDone = true; Log("popup closed"); }
                 return;
             }
 
@@ -251,7 +293,22 @@ namespace SortOrStay
                 bool roomOver = (!b.InRoom && b.RoomIndex > 0) || b.FloorDone;
                 if (roomOver && walkedFor != key)
                 {
+                    // hands-on: stay in the finished room a while, like a player reading the debrief (the next room's
+                    // door must still be open afterwards; it used to shut on a player still in the room next door)
+                    if (Hands && !Rec)
+                    {
+                        if (lingerKey != key) { lingerKey = key; lingerUntil = Time.time + 8f; Log("  staying 8 s in the finished room"); }
+                        if (Time.time < lingerUntil) return;
+                    }
                     walkedFor = key;
+                    if (!b.FloorDone)
+                    {
+                        var nextRoom = b.CurrentRoom;
+                        bool open = nextRoom.entrance == null || nextRoom.entrance.IsOpen;
+                        Log($"  Room {nextRoom.number}'s door: " + (open ? "open" : "SHUT  <- BUG"));
+                    }
+                    else if (b.Current.stairsGate != null)
+                        Log("  stairs door: " + (b.Current.stairsGate.IsOpen ? "open" : "SHUT  <- BUG"));
                     var done = b.FloorDone ? b.CurrentRoom : b.Current.rooms[b.RoomIndex - 1];
                     var res = GameState.Instance.Get(b.Current.number, done.number);
                     Log($"room {done.number} done after {steps} steps.  Result: " + Describe(res) + (b.FloorDone ? ".  Floor done, to the stairs." : ".  On to the next room."));
@@ -289,6 +346,15 @@ namespace SortOrStay
             if (Hands) { HandsOn(puzzle, ap); return; }
 
             if (Time.time < nextStep || !puzzle.AcceptsInput) return;
+            // the video: on the first room, ask Ada for a hint once (H), so the hint dialog is in it
+            if (Rec && !hintShown && steps == 2 && b != null && b.CurrentIndex == 0 && b.RoomIndex == 0)
+            {
+                hintShown = true;
+                puzzle.RequestHint();
+                Log("  hint asked (for the video)");
+                nextStep = Time.time + 1f;
+                return;
+            }
             if (ap.AutoStep())
             {
                 steps++;
@@ -319,7 +385,7 @@ namespace SortOrStay
             wpSince = Time.time;
             int target = i;
             Vector3 d = path[i] - pc.transform.position;
-            if (new Vector2(d.x, d.z).sqrMagnitude > 0.04f) pc.SetLook(Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg, d.y < -0.5f ? 24f : 14f);
+            if (!Rec && new Vector2(d.x, d.z).sqrMagnitude > 0.04f) pc.SetLook(Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg, d.y < -0.5f ? 24f : 14f);
             // inside the room: around the furniture on the walk map; from the door on: straight down the flights
             pc.WalkTo(path[i], 0.3f, () => arrived = target, i > 0);
         }
@@ -381,7 +447,7 @@ namespace SortOrStay
 
             if (pending)
             {
-                if (calm && Time.time > pendingSince + 0.35f)
+                if (calm && Time.time > pendingSince + (Rec ? 0.55f : 0.35f))
                 {
                     pending = false;
                     float walked = Vector3.Distance(Flat(pendingFrom), Flat(pc.transform.position));
@@ -399,7 +465,7 @@ namespace SortOrStay
                         Log($"step {steps,3}  {pendingName}  walked {walked:0.0} m  {Time.time - pendingSince:0.0} s" + (moved ? "" : "  <-- NOTHING HAPPENED") + $"\n            {after}");
                         if (!shotMid && steps == 8) { shotMid = true; Invoke(nameof(MidShot), 0.3f); }
                     }
-                    nextStep = Time.time + stepInterval;
+                    nextStep = Time.time + (Rec ? 0.45f : stepInterval);
                 }
                 else if (Time.time > pendingSince + 12f)
                 {
@@ -414,15 +480,18 @@ namespace SortOrStay
             if (!calm || Time.time < nextStep) return;
             actions++;
 
-            if (actions % 6 == 0)
+            bool askHint = Rec ? (!hintShown && actions == 3 && BuildingManager.Instance != null && BuildingManager.Instance.CurrentIndex == 0 && BuildingManager.Instance.RoomIndex == 0)
+                               : actions % 6 == 0;
+            if (askHint)
             {
+                hintShown = true;
                 puzzle.RequestHint();
                 Log($"  hint:  {Plain(puzzle.Hint()).Replace("\n", "  ")}");
                 nextStep = Time.time + stepInterval;
                 return;
             }
 
-            bool wrong = actions % 4 == 0;
+            bool wrong = !Rec && actions % 4 == 0;
             var target = ap.AutoTarget(wrong);
             if (wrong && target == null) { wrong = false; target = ap.AutoTarget(false); }
             if (target == null) { nextStep = Time.time + 0.3f; return; }
@@ -443,6 +512,8 @@ namespace SortOrStay
             pendingBefore = ap.DebugState();
             pendingSlips = puzzle.mistakes;
             pendingName = $"{target.name} \"{it.Prompt}\"";
+            lastTargetPos = target.transform.position;
+            hasTargetPos = true;
             pi.Use(target);
         }
 
@@ -451,8 +522,8 @@ namespace SortOrStay
         /// Answers the room's questions: the right answer, except one deliberate wrong pick per room in hands-on mode.
         void Quiz(RoomQuiz quiz)
         {
-            if (Time.unscaledTime < quizNext) return;
-            quizNext = Time.unscaledTime + 1.1f;
+            if (Now < quizNext) return;
+            quizNext = Now + (Rec ? 2.3f : 1.1f);
             var q = quiz.Current;
             if (q == null) return;
             if (quiz.AnsweredRight)
@@ -462,7 +533,7 @@ namespace SortOrStay
                 if (!quiz.Open) Log($"  questions done:  {quiz.WrongAnswers} wrong {(quiz.WrongAnswers == 1 ? "answer" : "answers")}.  Door open: {(quiz.puzzle != null && quiz.puzzle.door != null && quiz.puzzle.door.IsUnlocked ? "yes" : "NO  <-- BUG")}");
                 return;
             }
-            if (Hands && !quizWrongDone)
+            if (Hands && !Rec && !quizWrongDone)
             {
                 quizWrongDone = true;
                 int wrong = (q.correct + 1) % q.options.Length;
@@ -476,6 +547,210 @@ namespace SortOrStay
         }
 
         void MidShot() => Shot("2_midway");
+
+        // ------------------------------------------------------------ recording: the camera director
+
+        /// Where the room's sorting happens: the middle of its slots and items.
+        Vector3 Focus(SortPuzzleBase p)
+        {
+            if (p != focusFor)
+            {
+                focusFor = p;
+                var bnd = new Bounds(p.transform.position, Vector3.zero);
+                bool any = false;
+                if (p.slots != null)
+                    foreach (var t in p.slots)
+                        if (t != null) { if (!any) bnd = new Bounds(t.position, Vector3.zero); else bnd.Encapsulate(t.position); any = true; }
+                foreach (var it in p.items)
+                    if (it != null) { if (!any) bnd = new Bounds(it.transform.position, Vector3.zero); else bnd.Encapsulate(it.transform.position); any = true; }
+                focusCenter = bnd.center;
+            }
+            return focusCenter;
+        }
+
+        /// While recording: in a room the view turns smoothly to the things being sorted (third person over the
+        /// shoulder while the player walks up and starts; first person close up after the first few moves, for the
+        /// small things on a rack or shelf); walking between rooms it looks where the player is going.
+        void LateUpdate()
+        {
+            if (On && Rec) FrontCamera();
+        }
+
+        /// The labels on the things being sorted (weights, numbers, call numbers) face this way.
+        static bool FrontOf(SortPuzzleBase p, out Vector3 center, out Vector3 normal, out Vector3 along, out float halfW, out float halfH)
+        {
+            center = Vector3.zero; normal = Vector3.forward; along = Vector3.right; halfW = halfH = 0.5f;
+            Vector3 n = Vector3.zero;
+            int count = 0;
+            var pts = new List<Vector3>();
+            foreach (var it in p.items)
+            {
+                if (it == null || !it.gameObject.activeInHierarchy) continue;
+                pts.Add(it.label != null ? it.label.transform.position : it.transform.position + Vector3.up * 0.2f);
+                if (it.label != null) { n += -it.label.transform.forward; count++; }
+            }
+            if (p.slots != null) foreach (var t in p.slots) if (t != null) pts.Add(t.position);
+            if (pts.Count == 0 || count == 0) return false;
+            n.y = 0f;
+            if (n.sqrMagnitude < 0.0001f) return false;
+            normal = n.normalized;
+            along = Vector3.Cross(Vector3.up, normal).normalized;
+            var bnd = new Bounds(pts[0], Vector3.zero);
+            foreach (var q in pts) bnd.Encapsulate(q);
+            center = bnd.center;
+            float w = 0f, h = 0f;
+            foreach (var q in pts)
+            {
+                w = Mathf.Max(w, Mathf.Abs(Vector3.Dot(q - center, along)));
+                h = Mathf.Max(h, Mathf.Abs(q.y - center.y));
+            }
+            halfW = w + 0.35f;
+            halfH = h + 0.3f;
+            return true;
+        }
+
+        /// While a room is being sorted, the video's camera stands in front of the labelled side of the things being
+        /// sorted (a little to the side the player is not on, a little above), so every number can be read and the
+        /// player is seen reaching in; it glides there from the player's camera and back once the room is sorted.
+        void FrontCamera()
+        {
+            var pc = PlayerController.Instance;
+            var b = BuildingManager.Instance;
+            if (pc == null || pc.cam == null || pc.cinematic) { frontK = 0f; frontInit = false; return; }
+            var guide = GuideNpc.Instance;
+            bool talk = guide != null && (guide.DialogOpen || guide.LessonOpen || guide.Visible);
+            var puzzle = CurrentPuzzle();
+            bool sorting = b != null && b.InRoom && !b.FloorDone && puzzle != null && !puzzle.Solved && !walking && !talk
+                           && actions > 0 && (puzzle.quiz == null || !puzzle.quiz.Open);
+            float dt = Mathf.Max(0.001f, Time.deltaTime);
+            string room = b != null ? $"{b.CurrentIndex}:{b.RoomIndex}" : "";
+            if (room != frontRoom) { frontRoom = room; frontInit = false; }
+
+            Vector3 goalPos = frontPos;
+            Quaternion goalRot = frontRot;
+            float goalFov = frontFov;
+            Vector3 c = Vector3.zero, n = Vector3.forward, a = Vector3.right;
+            float hw = 1f, hh = 0.5f;
+            bool have = sorting && FrontOf(puzzle, out c, out n, out a, out hw, out hh);
+            if (have)
+            {
+                const float vfov = 50f;
+                float tv = Mathf.Tan(vfov * 0.5f * Mathf.Deg2Rad), th = tv * 16f / 9f;
+                float d = Mathf.Max(hw / th, hh / tv) * 1.15f + 0.4f;
+                d = Mathf.Max(d, 1.7f);
+                // stay on the side the player is not on, decided once per room (no swinging back and forth)
+                float s = Vector3.Dot(pc.transform.position - c, a);
+                if (!frontInit) frontSide = s > 0f ? -1 : 1;
+                Vector3 dir = (n * d + a * (frontSide * 0.28f * hw) + Vector3.up * (0.45f + 0.12f * d)).normalized;
+                float want = (n * d + a * (frontSide * 0.28f * hw) + Vector3.up * (0.45f + 0.12f * d)).magnitude;
+                Vector3 origin = c + Vector3.up * 0.15f;
+                float dist = want;
+                if (Physics.SphereCast(origin, 0.18f, dir, out RaycastHit hit, want, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+                    dist = Mathf.Max(0.9f, hit.distance - 0.15f);
+                Vector3 pos = origin + dir * dist;
+                if (dist < want * 0.85f) pos += Vector3.up * Mathf.Min(0.9f, (want - dist) * 0.35f);   // short of room: higher, looking down more
+                // the field of view widens if the wall kept the camera close
+                float flat = Mathf.Max(0.5f, Vector3.Dot(pos - c, n));
+                float need = 2f * Mathf.Atan(Mathf.Max(hw / (16f / 9f), hh) / flat) * Mathf.Rad2Deg * 1.1f;
+                goalFov = Mathf.Clamp(Mathf.Max(vfov, need), vfov, 75f);
+                Vector3 look = c;
+                if (hasTargetPos) look = Vector3.Lerp(c, lastTargetPos, 0.15f);
+                goalPos = pos;
+                goalRot = Quaternion.LookRotation(look - pos, Vector3.up);
+                if (!frontInit)
+                {
+                    frontInit = true;
+                    frontPos = goalPos; frontRot = goalRot; frontFov = goalFov; frontVel = Vector3.zero;
+                }
+            }
+
+            frontPos = Vector3.SmoothDamp(frontPos, goalPos, ref frontVel, 0.6f, 6f, dt);
+            frontRot = Quaternion.Slerp(frontRot, goalRot, 1f - Mathf.Exp(-dt * 3f));
+            frontFov = Mathf.Lerp(frontFov, goalFov, 1f - Mathf.Exp(-dt * 3f));
+
+            frontK = Mathf.MoveTowards(frontK, have ? 1f : 0f, dt / 1.1f);
+            if (frontK <= 0f) return;
+            float k = Mathf.SmoothStep(0f, 1f, frontK);
+            var cam = pc.cam.transform;
+            cam.position = Vector3.Lerp(cam.position, frontPos, k);
+            cam.rotation = Quaternion.Slerp(cam.rotation, frontRot, k);
+            pc.cam.fieldOfView = Mathf.Lerp(pc.cam.fieldOfView, frontFov, k);
+        }
+
+        void Director(BuildingManager b)
+        {
+            var pc = PlayerController.Instance;
+            if (pc == null || pc.cinematic) { camInit = false; return; }
+            if (!camInit) { camInit = true; camYaw = pc.Yaw; yawVel = pitchVel = 0f; if (pc.autoWalkSpeed < 2.5f) pc.autoWalkSpeed = 2.5f; pc.firstPersonFov = 78f; }
+            var guide = GuideNpc.Instance;
+            bool talk = guide != null && (guide.DialogOpen || guide.LessonOpen || guide.Visible);
+            var puzzle = CurrentPuzzle();
+            bool sorting = b != null && b.InRoom && !b.FloorDone && puzzle != null && !puzzle.Solved && !walking;
+
+            bool wantFirst = false;
+            float targetYaw = camYaw, targetPitch = camPitch;
+            bool aim = false;
+
+            if (sorting && !talk)
+            {
+                Vector3 f = Focus(puzzle);
+                if (hasTargetPos) f = Vector3.Lerp(f, lastTargetPos, 0.35f);
+                Vector3 from = wantFirst ? pc.transform.position + Vector3.up * pc.EyeHeight : pc.transform.position + Vector3.up * pc.pivotHeight;
+                Vector3 d = f - from;
+                float flat = new Vector2(d.x, d.z).magnitude;
+                if (flat > 0.8f)
+                {
+                    targetYaw = Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg;
+                    float back = wantFirst ? 0f : pc.camDistance * 0.9f;
+                    targetPitch = Mathf.Atan2(from.y + (wantFirst ? 0f : 0.35f) - f.y, flat + back) * Mathf.Rad2Deg + (wantFirst ? 2f : 4f);
+                    aim = true;
+                }
+            }
+            else if (walking && path != null && wp < path.Length)
+            {
+                Vector3 v = pc.transform.position;
+                Vector3 d = path[wp] - v;
+                if (new Vector2(d.x, d.z).sqrMagnitude > 0.09f)
+                {
+                    targetYaw = Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg;
+                    targetPitch = d.y < -0.5f ? 22f : 12f;
+                    aim = true;
+                }
+            }
+
+            if (pc.view != PlayerController.View.Third) pc.view = PlayerController.View.Third;
+
+            if (aim)
+            {
+                float dt = Mathf.Max(0.001f, Time.deltaTime);
+                camYaw = Mathf.SmoothDampAngle(camYaw, targetYaw, ref yawVel, wantFirst ? 0.35f : 0.55f, 220f, dt);
+                camPitch = Mathf.SmoothDamp(camPitch, Mathf.Clamp(targetPitch, -20f, 40f), ref pitchVel, 0.5f, 120f, dt);
+                pc.SetLook(camYaw, camPitch);
+            }
+            else camYaw = pc.Yaw;
+        }
+
+        /// The video: let her lesson play with her voice for a few steps (more on the first floor), then the
+        /// best / average / worst summary, then close it once she has finished.
+        void RecLesson(GuideNpc guide)
+        {
+            var b = BuildingManager.Instance;
+            int floor = b != null ? b.Current.number : 1;
+            int maxSteps = floor == 1 ? 6 : 2;
+            if (!guide.LessonOnSummary)
+            {
+                if (guide.LessonStepIndex >= maxSteps || Now > lessonSince + 120f) guide.LessonToSummary();
+                return;
+            }
+            if (GuideVoice.Speaking) { summaryQuietSince = -1f; return; }
+            if (summaryQuietSince < 0f) summaryQuietSince = Now;
+            if (Now > summaryQuietSince + 2f)
+            {
+                guide.CloseLesson();
+                lessonSince = -1f;
+                Log("guide lesson closed");
+            }
+        }
 
         static string Describe(LevelResult r)
         {
