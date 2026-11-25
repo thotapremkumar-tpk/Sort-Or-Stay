@@ -335,7 +335,6 @@ namespace SortOrStayEditor
             var gate = g.gameObject.AddComponent<RoomGate>();
             gate.panel = panel;
             gate.openOffset = new Vector3(p.entranceSlide * (w + 0.06f), 0f, 0f);
-            gate.inward = Vector3.back;
             gate.closeBehind = true;
             gate.lamp = lamp.GetComponent<Renderer>();
             gate.lockedMessage = r == 0 ? "Locked.  This floor's rooms open once you come down the stairs."
@@ -421,7 +420,6 @@ namespace SortOrStayEditor
             stairsGate = sg.gameObject.AddComponent<RoomGate>();
             stairsGate.panel = panel;
             stairsGate.openOffset = new Vector3(-(GATE_W + 0.06f), 0f, 0f);
-            stairsGate.inward = Vector3.forward;
             stairsGate.closeBehind = false;
             stairsGate.lamp = lamp.GetComponent<Renderer>();
             stairsGate.lockedMessage = ground ? "Locked.  The street door opens after all three rooms of this floor."

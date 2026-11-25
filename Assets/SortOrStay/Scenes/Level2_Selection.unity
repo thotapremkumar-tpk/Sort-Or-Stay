@@ -4610,7 +4610,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &198883723
 Transform:
   m_ObjectHideFlags: 0
@@ -8206,7 +8206,6 @@ MonoBehaviour:
   trolley: {fileID: 868868487}
   cable: {fileID: 1860863760}
   hook: {fileID: 2144234703}
-  board: {fileID: 934279067}
   terminal: {fileID: 1630871928}
   nextMarker: {fileID: 1521463509}
 --- !u!114 &352183590
@@ -8893,7 +8892,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &386783024
 Transform:
   m_ObjectHideFlags: 0
@@ -10090,7 +10089,7 @@ MonoBehaviour:
   statusLight: {fileID: 1968814196}
   lockedColor: {r: 1, g: 0.12, b: 0.08, a: 1}
   unlockedColor: {r: 0.2, g: 1, b: 0.35, a: 1}
-  lockedMessage: 'The loading doors won''t budge.  The board says: LIGHT TO HEAVY.'
+  lockedMessage: The loading doors are locked. Sort the crates from lightest to heaviest.
 --- !u!4 &422463759
 Transform:
   m_ObjectHideFlags: 0
@@ -20471,7 +20470,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &806712081
 Transform:
   m_ObjectHideFlags: 0
@@ -53170,7 +53169,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &2012622870
 Transform:
   m_ObjectHideFlags: 0

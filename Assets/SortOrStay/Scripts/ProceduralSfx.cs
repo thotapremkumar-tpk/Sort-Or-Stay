@@ -14,7 +14,11 @@ namespace SortOrStay
         static float Noise() => (float)(rng.NextDouble() * 2.0 - 1.0);
 
         static AudioClip select, swap, error, hint, unlock, rattle, slide, hum, thud, scan, page;
+        static AudioClip doorRelease, doorOpenStop, doorCloseStop;
+        static AudioClip compare, pieceSeat, sortLayout;
         static readonly Dictionary<int, AudioClip> blips = new Dictionary<int, AudioClip>();
+        static readonly Dictionary<(int milliseconds, bool hinged, bool closing), AudioClip> doorMotion =
+            new Dictionary<(int milliseconds, bool hinged, bool closing), AudioClip>();
 
         // ------------------------------------------------------------ clips
 
@@ -131,6 +135,89 @@ namespace SortOrStay
                 }
                 return slide;
             }
+        }
+
+        public static AudioClip DoorRelease => doorRelease != null ? doorRelease :
+            doorRelease = Make("door_latch_release", 0.24f, t =>
+                MetalClick(t, 380f, 0.030f) * 0.46f + MetalClick(t - 0.075f, 270f, 0.040f) * 0.32f);
+
+        public static AudioClip Compare => compare != null ? compare :
+            compare = Make("sort_compare", 0.16f, t =>
+                0.33f * Mathf.Sin(TAU * 760f * t) * Env(t, 0.005f, 0.028f) +
+                0.24f * Mathf.Sin(TAU * 1015f * t) * Env(t - 0.036f, 0.005f, 0.032f));
+
+        public static AudioClip PieceSeat => pieceSeat != null ? pieceSeat :
+            pieceSeat = Make("sort_piece_seat", 0.14f, t =>
+                (0.38f * Mathf.Sin(TAU * 280f * t) + 0.12f * Mathf.Sin(TAU * 530f * t))
+                * Env(t, 0.003f, 0.028f));
+
+        public static AudioClip SortLayout
+        {
+            get
+            {
+                if (sortLayout != null) return sortLayout;
+                float smooth = 0f;
+                sortLayout = Make("sort_layout", 0.24f, t =>
+                {
+                    smooth += (Noise() - smooth) * 0.12f;
+                    float envelope = Mathf.Sin(Mathf.PI * t / 0.24f);
+                    return 0.45f * smooth * envelope * envelope;
+                });
+                return sortLayout;
+            }
+        }
+
+        public static AudioClip DoorEnd(bool closing)
+        {
+            if (closing)
+            {
+                if (doorCloseStop == null)
+                    doorCloseStop = Make("door_latch_close", 0.32f, t =>
+                        MetalClick(t, 72f, 0.065f) * 0.54f +
+                        MetalClick(t - 0.055f, 315f, 0.036f) * 0.37f);
+                return doorCloseStop;
+            }
+
+            if (doorOpenStop == null)
+                doorOpenStop = Make("door_open_stop", 0.23f, t => MetalClick(t, 94f, 0.050f) * 0.35f);
+            return doorOpenStop;
+        }
+
+        /// The motion sound follows the animation duration and eases in and out with the door.
+        public static AudioClip DoorMotion(float duration, bool hinged, bool closing)
+        {
+            int milliseconds = Mathf.RoundToInt(duration * 1000f);
+            if (milliseconds <= 0) return null;
+            var key = (milliseconds, hinged, closing);
+            if (doorMotion.TryGetValue(key, out var clip) && clip != null) return clip;
+
+            float seconds = milliseconds / 1000f;
+            float filteredNoise = 0f;
+            float phase = 0f;
+            float baseFrequency = hinged ? 110f : 53f;
+            string mechanism = hinged ? "hinge" : "track";
+            string direction = closing ? "close" : "open";
+            clip = Make($"door_{mechanism}_{direction}_{milliseconds}", seconds, t =>
+            {
+                float u = t / seconds;
+                float speed = 4f * u * (1f - u);
+                float frequency = baseFrequency + speed * (hinged ? 32f : 24f) + (closing ? -5f : 5f);
+                phase += TAU * frequency / SR;
+                filteredNoise += (Noise() - filteredNoise) * (hinged ? 0.045f : 0.028f);
+                float resonance = 0.16f * Mathf.Sin(phase) + 0.07f * Mathf.Sin(phase * 2.03f);
+                float texture = filteredNoise * (hinged ? 0.9f : 1.6f);
+                return (resonance + texture) * speed * speed;
+            });
+            doorMotion[key] = clip;
+            return clip;
+        }
+
+        static float MetalClick(float t, float frequency, float decay)
+        {
+            if (t < 0f) return 0f;
+            float phase = TAU * frequency * t;
+            return (0.68f * Mathf.Sin(phase) + 0.24f * Mathf.Sin(phase * 2.37f) + 0.18f * Noise())
+                * Env(t, 0.003f, decay);
         }
 
         /// Seamless 1 s loop: electrical hum of the ceiling light.

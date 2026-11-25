@@ -16,7 +16,7 @@ namespace SortOrStay
 
         public Camera cam;
         public PlayerController controller;
-        public Transform marker;                 // bouncing chevron shown above the hovered thing
+        public Transform marker;                 // bouncing chevron for hovered objects other than doors
         public float useDistance = 1.7f;         // flat distance at which a click acts at once
         public float approachDistance = 1.05f;   // otherwise walk until this close
         public float pickRadius = 0.2f;          // "near miss" radius
@@ -109,7 +109,7 @@ namespace SortOrStay
             if (marker == null) return;
             Collider show = currentCol;
             if (show == null && pendingTarget != null && controller != null && controller.IsAutoWalking) show = pendingCol;
-            if (show == null || !show.enabled || !show.gameObject.activeInHierarchy)
+            if (IsDoor(Current) || show == null || !show.enabled || !show.gameObject.activeInHierarchy)
             {
                 if (marker.gameObject.activeSelf) marker.gameObject.SetActive(false);
                 return;

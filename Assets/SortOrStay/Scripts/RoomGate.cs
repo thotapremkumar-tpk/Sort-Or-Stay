@@ -11,9 +11,7 @@ namespace SortOrStay
     {
         public Transform panel;
         public Vector3 openOffset = new Vector3(1.45f, 0f, 0f);   // local: where the panel waits, inside the wall
-        public Vector3 inward = Vector3.back;                       // world direction from the doorway into the room
         public bool closeBehind = true;                             // shut once the player is inside
-        public float closeWhenInside = 1.7f;                        // metres past the doorway
         public float moveTime = 0.9f;
         public Renderer lamp;
         public Light lampLight;
@@ -22,27 +20,9 @@ namespace SortOrStay
         public bool IsOpen { get; private set; }
         public bool Unlocked { get; private set; }
 
-        // the room behind this door (set by the building): it only shuts once the player is in *this* room.
-        // (Measured from the doorway alone, a player still in the room next door counted as "inside" and the
-        // next room's door shut before they got to it.)
-        bool hasRoom;
-        Vector3 roomMin, roomMax;
-
-        public void SetRoom(Vector3 min, Vector3 max)
-        {
-            hasRoom = true;
-            roomMin = min;
-            roomMax = max;
-        }
-
-        bool PlayerInRoom(Vector3 p) =>
-            p.x > roomMin.x + 0.3f && p.x < roomMax.x - 0.3f && p.z > roomMin.z + 0.3f && p.z < roomMax.z - 0.3f &&
-            p.y > roomMin.y - 0.6f && p.y < roomMax.y;
-
         Vector3 closedPos;
         Material lampMat;
         bool closedBehind;
-        float playerInSince = -1f;
         Coroutine move;
 
         static readonly Color Red = new Color(1f, 0.12f, 0.08f);
@@ -78,34 +58,22 @@ namespace SortOrStay
             SetLamp(false);
         }
 
-        void Update()
+        /// Called when the building detects that the player is clear of the doorway and inside the room.
+        public void CloseBehindPlayer()
         {
-            if (!closeBehind || !IsOpen || closedBehind || panel == null) return;
-            var pc = PlayerController.Instance;
-            if (pc == null) return;
-            Vector3 d = pc.transform.position - transform.position;
-            if (Mathf.Abs(d.y) > 1.6f) return;
-            Vector3 side = Vector3.Cross(Vector3.up, inward);
-            bool inside = hasRoom ? PlayerInRoom(pc.transform.position) : Mathf.Abs(Vector3.Dot(d, side)) < 3f;
-            if (Vector3.Dot(d, inward) > closeWhenInside && inside)
-            {
-                // wait for the guide to come in too (but not for ever)
-                if (playerInSince < 0f) playerInSince = Time.time;
-                var g = GuideNpc.Instance;
-                bool guideIn = g == null || !g.isActiveAndEnabled || g.IsPast(transform.position, inward, 0.9f);
-                if (!guideIn && Time.time < playerInSince + 6f) return;
-                closedBehind = true;
-                IsOpen = false;
-                SetLamp(false);
-                if (move != null) StopCoroutine(move);
-                move = StartCoroutine(Slide(closedPos, false));
-            }
-            else playerInSince = -1f;
+            if (!closeBehind || !IsOpen || panel == null) return;
+            closedBehind = true;
+            IsOpen = false;
+            SetLamp(false);
+            if (move != null) StopCoroutine(move);
+            move = StartCoroutine(Slide(closedPos, false));
         }
 
         IEnumerator Slide(Vector3 to, bool opening)
         {
-            ProceduralSfx.Play(ProceduralSfx.Slide, transform.position + Vector3.up * 1.2f, 0.7f);
+            Vector3 soundPosition = transform.position + Vector3.up * 1.2f;
+            if (opening) ProceduralSfx.Play(ProceduralSfx.DoorRelease, soundPosition, 0.65f);
+            ProceduralSfx.Play(ProceduralSfx.DoorMotion(moveTime, hinged: false, closing: !opening), soundPosition, 0.8f);
             Vector3 from = panel.localPosition;
             float e = 0f;
             while (e < moveTime)
@@ -115,7 +83,7 @@ namespace SortOrStay
                 yield return null;
             }
             panel.localPosition = to;
-            if (!opening) ProceduralSfx.Play(ProceduralSfx.Thud, transform.position + Vector3.up * 1.2f, 0.5f);
+            ProceduralSfx.Play(ProceduralSfx.DoorEnd(closing: !opening), soundPosition, 0.7f);
             Rebuild();
             move = null;
         }
@@ -146,7 +114,7 @@ namespace SortOrStay
             ProceduralSfx.Play(ProceduralSfx.Rattle, transform.position + Vector3.up * 1.1f, 0.8f);
             if (PlayerController.Instance != null) PlayerController.Instance.Gesture(PlayerController.GestureTryDoor);
             var g = GuideNpc.Instance;
-            string msg = closedBehind && Unlocked ? "This room is done.  Its own exit door is the way out." : lockedMessage;
+            string msg = closedBehind ? "Use this room's exit door to leave." : lockedMessage;
             if (g != null && g.isActiveAndEnabled && g.Visible) g.Say(msg, GuideNpc.Mood.Deny);
             else if (GameUI.Instance != null) GameUI.Instance.Flash(msg);
         }

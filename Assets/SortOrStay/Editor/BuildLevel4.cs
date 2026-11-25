@@ -101,14 +101,12 @@ namespace SortOrStayEditor
             var root = new GameObject("Level4_ControlRoom").transform;
             BuildRoom(root);
             var door = DoubleDoor(root, HD, T, DOOR_W, DOOR_H, mSteel, mDark, mLamp, mGlass, false);
-            door.lockedMessage = "The doors stay shut.  The display wall reads:  ONE SORTED RUN.";
+            door.lockedMessage = "The doors are locked. Merge the blocks into one sorted run.";
 
             BuildConsole(root, out Transform rackRow, out Transform mergeRow, out Renderer[] strips, out Renderer mergeStrip,
                          out PushButton splitBtn, out PushButton hintBtn);
             var blocks = BuildBlocks(root, rackRow);
-            var board = BuildDisplayWall(root);
             var terminal = BuildKiosk(root);
-            BuildPoster(root);
             BuildRacks(root);
             BuildOperatorDesks(root);
             BuildLights(root);
@@ -124,7 +122,6 @@ namespace SortOrStayEditor
             puzzle.runGap = GAP;
             puzzle.runStrips = strips;
             puzzle.mergeStrip = mergeStrip;
-            puzzle.board = board;
             puzzle.terminal = terminal;
             puzzle.splitButton = splitBtn.cap;
             puzzle.door = door;
@@ -349,23 +346,7 @@ namespace SortOrStayEditor
             return list;
         }
 
-        // ============================================================ display wall + kiosk + poster
-
-        static TMP_Text BuildDisplayWall(Transform p)
-        {
-            var g = Group("DisplayWall", p);
-            g.localPosition = new Vector3(0f, 0f, 1.6f);
-            foreach (float x in new[] { -1.9f, 1.9f })
-            {
-                Cube("Leg", new Vector3(x, 0.66f, 0.05f), new Vector3(0.08f, 1.32f, 0.08f), mDark, g);
-                Cube("Foot", new Vector3(x, 0.02f, 0.05f), new Vector3(0.36f, 0.04f, 0.5f), mDark, g, false);
-            }
-            Cube("Bezel", new Vector3(0f, 1.98f, 0f), new Vector3(4.3f, 1.34f, 0.08f), mDark, g);
-            Cube("Screen", new Vector3(0f, 1.98f, -0.042f), new Vector3(4.16f, 1.2f, 0.004f), mScreen, g, false);
-            Cube("TopLight", new Vector3(0f, 2.66f, -0.01f), new Vector3(4.3f, 0.03f, 0.06f), mBand, g, false);
-            return Text("BoardText", g, new Vector3(0f, 1.98f, -0.046f), new Vector2(3.95f, 1.08f),
-                        "<b>MERGE CONSOLE  ·  MERGE SORT</b>", new Color(0.78f, 0.95f, 1f), TextAlignmentOptions.Center, false);
-        }
+        // ============================================================ kiosk
 
         static Terminal BuildKiosk(Transform p)
         {
@@ -390,22 +371,6 @@ namespace SortOrStayEditor
             bc.center = new Vector3(0f, 0.78f, 0f);
             bc.size = new Vector3(0.74f, 1.56f, 0.45f);
             return term;
-        }
-
-        static void BuildPoster(Transform p)
-        {
-            var poster = Group("RulesPoster", p);
-            poster.localPosition = new Vector3(-HW + 0.01f, 0f, -1.4f);
-            poster.localRotation = Quaternion.Euler(0f, -90f, 0f);
-            Cube("Board", new Vector3(0f, 1.7f, -0.01f), new Vector3(1.5f, 1.05f, 0.02f), mWhite, poster, false);
-            Cube("Stripe", new Vector3(0f, 2.15f, -0.022f), new Vector3(1.5f, 0.13f, 0.004f), mBand, poster, false);
-            Text("Title", poster, new Vector3(0f, 2.15f, -0.026f), new Vector2(1.4f, 0.09f), "HOW THE MERGE CONSOLE WORKS", Color.white, TextAlignmentOptions.Center, true);
-            Text("Body", poster, new Vector3(0f, 1.62f, -0.026f), new Vector2(1.36f, 0.8f),
-                 "1.  SPLIT halves every run, until each block stands alone.\n" +
-                 "2.  Merge two neighbouring runs:  compare their two FRONT blocks and move the smaller one down into the merge row.\n" +
-                 "3.  When one run is empty, the rest of the other follows.\n" +
-                 "4.  Runs of 1 → 2 → 4 → 8.\n\n<i>One block on its own is always sorted.</i>",
-                 InkDark, TextAlignmentOptions.TopLeft, false);
         }
 
         // ============================================================ server racks + operator desks

@@ -1,7 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Text;
-using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -52,7 +51,6 @@ namespace SortOrStay
         public float runGap = 0.22f;         // extra space between two runs
         public Renderer[] runStrips;         // glowing strip under each run (one per possible run)
         public Renderer mergeStrip;          // glowing strip under the merge span
-        public TMP_Text board;               // display wall behind the console
         public Terminal terminal;
         public Transform splitButton;        // pulses while splitting is the next step
 
@@ -317,9 +315,9 @@ namespace SortOrStay
             int before = runs.Count;
             runs = next;
             splits++;
-            ProceduralSfx.Play(ProceduralSfx.Slide, rackRow.position, 0.6f);
+            ProceduralSfx.Play(ProceduralSfx.SortLayout, rackRow.position, 0.6f);
             yield return Relayout(0.45f);
-            ProceduralSfx.Play(ProceduralSfx.Thud, rackRow.position, 0.45f);
+            ProceduralSfx.Play(ProceduralSfx.PieceSeat, rackRow.position, 0.45f);
 
             var ui = GameUI.Instance;
             if (AllSingles())
@@ -358,7 +356,11 @@ namespace SortOrStay
         IEnumerator TakeRoutine(SortItem b, bool fromLeft, bool compared)
         {
             busy = true;
-            if (compared) comparisons++;
+            if (compared)
+            {
+                comparisons++;
+                ProceduralSfx.Play(ProceduralSfx.Compare, b.transform.position, 0.75f);
+            }
             yield return MoveDown(b, fromLeft, true);
 
             // one run is empty: the player takes the rest of the other run down, one block at a time, no comparing
@@ -387,9 +389,8 @@ namespace SortOrStay
             var hand = Hand;
             bool useHand = byHand && hand != null && Player != null && Flat(Player.transform.position, b.transform.position) < 1.2f;
             if (useHand) hand.Hold(hand.SideFor(b.transform.position), b.transform, Grip);
-            ProceduralSfx.Play(ProceduralSfx.Swap, b.transform.position, 0.5f);
             yield return ArcTo(b, to, Vector3.up * 0.09f, 0.38f);
-            ProceduralSfx.Play(ProceduralSfx.Blip(Mathf.Min(7, output.Count - 1)), to, 0.45f);
+            ProceduralSfx.Play(ProceduralSfx.PieceSeat, to, 0.55f);
             if (useHand) hand.Release();
         }
 
@@ -412,7 +413,7 @@ namespace SortOrStay
             pair = -1;
             output.Clear();
             Refresh();
-            ProceduralSfx.Play(ProceduralSfx.Slide, rackRow.position, 0.5f);
+            ProceduralSfx.Play(ProceduralSfx.SortLayout, rackRow.position, 0.5f);
             yield return Relayout(0.5f);
 
             if (runs.Count == 1)
@@ -607,62 +608,15 @@ namespace SortOrStay
             if (GameUI.Instance != null)
                 SetHudStats($"COMPARISONS  {comparisons}      MOVES  {moves}      HINTS  {hintsUsed}");
 
-            string step = Solved ? "ALL SORTED"
-                : splitting ? $"STEP 1   DIVIDE   ·   runs of {MaxRunLength()}   ·   press SPLIT"
-                : pair >= 0 ? $"STEP 2   MERGE   ·   runs of {LeftRun.len} + {RightRun.len}  →  {LeftRun.len + RightRun.len}"
-                : "STEP 2   MERGE";
-            string status = Solved ? "<color=#1f9d47>DOORS OPEN</color>" : "<color=#d8432f>LOCKED</color>";
-
-            if (board != null)
-            {
-                var sb = new StringBuilder();
-                sb.Append("<b>MERGE CONSOLE  ·  MERGE SORT</b>\n\n");
-                sb.Append("RACK    ").Append(RackLine()).Append('\n');
-                sb.Append("MERGE   ").Append(MergeLine()).Append("\n\n");
-                sb.Append(step).Append('\n');
-                sb.Append($"COMPARISONS  {comparisons}      MOVES  {moves}      ").Append(status);
-                board.text = sb.ToString();
-            }
             if (terminal != null)
             {
                 terminal.SetText(
                     "<b>MERGE SORT</b>   FLOOR 4\n" +
                     "Split until each block is on its own.\nMerge two runs by taking the smaller\nfront block each time.\n\n" +
-                    $"DOORS   {status}\n" +
                     $"RUNS {runs.Count}   MOVES {moves}\n" +
                     (splitting ? "NEXT:  SPLIT" : Solved ? "SORTED" : "NEXT:  SMALLER FRONT") + "\n\n" +
                     "<size=80%>[ press HINT or H ]</size>");
             }
-        }
-
-        string RackLine()
-        {
-            var sb = new StringBuilder();
-            for (int k = 0; k < runs.Count; k++)
-            {
-                string col = !Solved && pair >= 0 && k == pair ? "#4f9eff" : !Solved && pair >= 0 && k == pair + 1 ? "#ff8c33" : null;
-                if (col != null) sb.Append("<color=").Append(col).Append('>');
-                sb.Append("[ ");
-                for (int i = runs[k].start; i < runs[k].End; i++)
-                {
-                    bool gone = output.Contains(items[i]);
-                    sb.Append(gone ? "__" : items[i].value.ToString()).Append(' ');
-                }
-                sb.Append(']');
-                if (col != null) sb.Append("</color>");
-                sb.Append("  ");
-            }
-            return sb.ToString();
-        }
-
-        string MergeLine()
-        {
-            if (pair < 0) return "<color=#8a93a0>-</color>";
-            var sb = new StringBuilder("<color=#3fbf5f>[ ");
-            int total = LeftRun.len + RightRun.len;
-            for (int k = 0; k < total; k++) sb.Append(k < output.Count ? output[k].value.ToString() : "__").Append(' ');
-            sb.Append("]</color>");
-            return sb.ToString();
         }
 
         /// A glowing strip under every run (blue and orange for the two being merged) and one under the merge span.

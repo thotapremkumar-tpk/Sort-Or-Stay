@@ -10,8 +10,8 @@ using static SortOrStayEditor.Kit;
 namespace SortOrStayEditor
 {
     /// Builds Floor 5, "The Final Vault" (quick sort): a bright marble vault with a long counter holding eight
-    /// numbered gold bars, a laser gate, two choice buttons, a round vault door with a hand wheel, safe-deposit
-    /// walls, pillars and the gold chest. The vault door opens onto the exit stairs and the end scoreboard.
+    /// numbered gold bars, a laser gate, two choice buttons, a steel exit door, safe-deposit
+    /// walls, pillars and the gold chest. The exit door leads to the end scoreboard.
     /// Menu: Sort or Stay > Build Level 5 (Vault). Re-running it rebuilds and overwrites the scene.
     public static class BuildLevel5
     {
@@ -20,7 +20,7 @@ namespace SortOrStayEditor
         const float W = 11f, D = 10f, H = 4.6f, T = 0.2f;
         const float HW = W * 0.5f, HD = D * 0.5f;
         const float DOOR_W = 1.5f, DOOR_H = 2.5f, SILL = 0.2f;
-        const float DOOR_CY = (SILL + DOOR_H) * 0.5f, VAULT_R = 1.4f;
+        const float DOOR_CY = (SILL + DOOR_H) * 0.5f;
         const int BARS = 8;
 
         const float COUNTER_LEN = 4.6f, COUNTER_DEP = 0.6f, COUNTER_Z = 0.7f, COUNTER_Y = 0.92f, PITCH = 0.46f;
@@ -30,7 +30,7 @@ namespace SortOrStayEditor
         static readonly Vector3 SPAWN = new Vector3(0f, 0f, -2.6f);
         static readonly int[] PREVIEW = { 47, 19, 81, 31, 64, 11, 93, 36 };
 
-        static Material mFloor, mMarble, mMarbleDark, mWall, mCeil, mGold, mBrass, mVaultSteel, mVaultDark, mDark, mVelvet, mPlate,
+        static Material mFloor, mMarble, mMarbleDark, mWall, mCeil, mGold, mBrass, mVaultSteel, mDark, mVelvet, mPlate,
                         mCarpet, mStrip, mLaser, mPadBlue, mPadRed, mScreen, mExit, mLamp, mPanel, mHousing, mDeposit, mTread;
 
         static float SlotX(int j) => -PITCH * (BARS - 1) * 0.5f + PITCH * j;
@@ -107,7 +107,7 @@ namespace SortOrStayEditor
 
             var root = new GameObject("Level5_FinalVault").transform;
             BuildRoom(root);
-            var door = BuildVaultDoor(root, out Transform wheel);
+            var door = BuildExitDoor(root);
 
             BuildCounter(root, out Transform[] slots);
             var bars = BuildBars(root, slots);
@@ -136,7 +136,6 @@ namespace SortOrStayEditor
             puzzle.pivotLight = pivotLight;
             puzzle.board = board;
             puzzle.terminal = terminal;
-            puzzle.vaultWheel = wheel;
             puzzle.door = door;
             terminal.puzzle = puzzle;
             smaller.puzzle = puzzle;
@@ -171,7 +170,6 @@ namespace SortOrStayEditor
             mGold = Flat("L5_Gold", new Color(1.0f, 0.76f, 0.26f), 0.8f, 0.95f);
             mBrass = Flat("L5_Brass", new Color(0.82f, 0.64f, 0.30f), 0.65f, 0.75f);
             mVaultSteel = Pbr("L5_VaultSteel", "MetalPlates017A", new Color(0.80f, 0.82f, 0.85f), 1f, 0.55f, 0.6f);
-            mVaultDark = Pbr("L5_VaultDark", "Metal063", new Color(0.48f, 0.50f, 0.53f), 1f, 0.5f, 0.6f);
             mDark = Flat("L5_Dark", new Color(0.15f, 0.15f, 0.16f), 0.4f, 0.3f);
             mVelvet = Flat("L5_Velvet", new Color(0.45f, 0.06f, 0.10f), 0.15f, 0f);
             mPlate = Flat("L5_BarPlate", new Color(0.98f, 0.96f, 0.90f), 0.3f, 0f);
@@ -230,59 +228,31 @@ namespace SortOrStayEditor
             Cube("CarpetBorder", new Vector3(0f, 0.003f, -2.3f), new Vector3(1.8f, 0.006f, 4.9f), mBrass, room, false);
             Cube("Carpet", new Vector3(0f, 0.006f, -2.3f), new Vector3(1.64f, 0.008f, 4.74f), mCarpet, room, false);
 
-            // exit sign above the vault door
+            // exit sign for the room
             Cube("ExitSign", new Vector3(-2.3f, 2.55f, HD - 0.02f), new Vector3(0.7f, 0.22f, 0.04f), mExit, room, false);
             Text("ExitText", room, new Vector3(-2.3f, 2.55f, HD - 0.045f), new Vector2(0.62f, 0.16f), "EXIT", Color.white, TextAlignmentOptions.Center, true);
         }
 
-        // ============================================================ vault door
+        // ============================================================ exit door
 
-        static Door BuildVaultDoor(Transform p, out Transform wheel)
+        static Door BuildExitDoor(Transform p)
         {
-            var g = Group("VaultDoor", p);
+            var g = Group("Door", p);
             g.localPosition = new Vector3(0f, 0f, HD);       // the room-side face of the front wall
 
-            // brass ring on the wall around the opening
-            const int segs = 28;
-            float rr = VAULT_R + 0.17f;
-            for (int k = 0; k < segs; k++)
-            {
-                float a = k * 360f / segs;
-                float rad = a * Mathf.Deg2Rad;
-                var s = Cube("Ring_" + k, new Vector3(Mathf.Cos(rad) * rr, DOOR_CY + Mathf.Sin(rad) * rr, -0.06f),
-                             new Vector3(2f * Mathf.PI * rr / segs + 0.03f, 0.22f, 0.12f), mBrass, g, false);
-                s.transform.localRotation = Quaternion.Euler(0f, 0f, a + 90f);
-            }
+            float halfWidth = DOOR_W * 0.5f;
+            float height = DOOR_H - SILL;
+            Cube("Frame_L", new Vector3(-halfWidth - 0.06f, DOOR_CY, -0.045f), new Vector3(0.12f, height, 0.09f), mDark, g, false);
+            Cube("Frame_R", new Vector3(halfWidth + 0.06f, DOOR_CY, -0.045f), new Vector3(0.12f, height, 0.09f), mDark, g, false);
+            Cube("Frame_Top", new Vector3(0f, DOOR_H + 0.06f, -0.045f), new Vector3(DOOR_W + 0.24f, 0.12f, 0.09f), mDark, g, false);
 
-            // the door itself: a thick steel disk that swings into the room on a hinge at its left edge
             var panel = Group("Panel", g);
-            panel.localPosition = new Vector3(0f, DOOR_CY, -0.26f);
-            CylZ("Disk", Vector3.zero, VAULT_R * 2f, 0.28f, mVaultSteel, panel);
-            CylZ("Face", new Vector3(0f, 0f, -0.145f), VAULT_R * 1.62f, 0.02f, mVaultDark, panel);
-            CylZ("InnerFace", new Vector3(0f, 0f, -0.152f), VAULT_R * 1.2f, 0.02f, mVaultSteel, panel);
-            for (int k = 0; k < 16; k++)
-            {
-                float rad = k * Mathf.PI * 2f / 16f;
-                CylZ("Bolt", new Vector3(Mathf.Cos(rad) * VAULT_R * 0.9f, Mathf.Sin(rad) * VAULT_R * 0.9f, -0.15f), 0.11f, 0.05f, mBrass, panel);
-            }
-            CylZ("Hub", new Vector3(0f, 0f, -0.18f), 0.46f, 0.08f, mBrass, panel);
-            wheel = Group("Wheel", panel);
-            wheel.localPosition = new Vector3(0f, 0f, -0.27f);
-            for (int s = 0; s < 3; s++)
-            {
-                var spoke = Cube("Spoke", Vector3.zero, new Vector3(1.24f, 0.06f, 0.05f), mBrass, wheel, false);
-                spoke.transform.localRotation = Quaternion.Euler(0f, 0f, s * 60f);
-            }
-            for (int k = 0; k < 6; k++)
-            {
-                float rad = k * Mathf.PI / 3f;
-                Sphere("Knob", new Vector3(Mathf.Cos(rad) * 0.64f, Mathf.Sin(rad) * 0.64f, 0f), 0.11f, mBrass, wheel);
-            }
-            CylZ("WheelHub", Vector3.zero, 0.18f, 0.1f, mGold, wheel);
-            Text("Plate", panel, new Vector3(0f, -0.92f, -0.164f), new Vector2(1.2f, 0.1f), "ALL BARS IN ORDER", new Color(0.25f, 0.2f, 0.1f), TextAlignmentOptions.Center, true);
+            panel.localPosition = new Vector3(0f, DOOR_CY, T * 0.5f);
+            var slabSize = new Vector3(DOOR_W - 0.02f, height - 0.02f, 0.08f);
+            Cube("Slab", Vector3.zero, slabSize, mVaultSteel, panel, false);
+            Cube("Handle", new Vector3(halfWidth - 0.17f, -0.12f, -0.055f), new Vector3(0.045f, 0.28f, 0.05f), mDark, panel, false);
             var bc = panel.gameObject.AddComponent<BoxCollider>();
-            bc.center = Vector3.zero;
-            bc.size = new Vector3(2.1f, 2.5f, 0.3f);
+            bc.size = slabSize;
 
             var lampGo = Sphere("StatusLamp", new Vector3(2.0f, DOOR_CY + 1.25f, -0.07f), 0.12f, mLamp, g);
             Cube("LampBase", new Vector3(2.0f, DOOR_CY + 1.25f, -0.02f), new Vector3(0.18f, 0.18f, 0.03f), mBrass, g, false);
@@ -291,12 +261,12 @@ namespace SortOrStayEditor
             var door = g.gameObject.AddComponent<Door>();
             door.panel = panel;
             door.swing = true;
-            door.hinge = new Vector3(-(VAULT_R + 0.05f), 0f, -0.26f);
-            door.swingAngle = 105f;                            // positive: swings into the room
-            door.openTime = 2.6f;
+            door.hinge = new Vector3(-halfWidth, 0f, T * 0.5f);
+            door.swingAngle = -100f;
+            door.openTime = 2.2f;
             door.statusLamp = lampGo.GetComponent<Renderer>();
             door.statusLight = lampLight;
-            door.lockedMessage = "The vault door won't move.  A brass plate reads:  ALL BARS IN ORDER.";
+            door.lockedMessage = "The exit is locked. Sort the gold bars from smallest to largest.";
             return door;
         }
 
@@ -379,7 +349,7 @@ namespace SortOrStayEditor
             var g = Group("ChoicePads", p);
             g.position = new Vector3(SlotX(0), COUNTER_Y, COUNTER_Z + PADS_FORWARD);
             smaller = Pad(g, "SmallerPad", new Vector3(-0.1f, 0f, 0f), mPadBlue, "1  SMALLER", "smaller", "Smaller than the pivot:  swap it behind the gate   [1]");
-            bigger = Pad(g, "BiggerPad", new Vector3(0.1f, 0f, 0f), mPadRed, "BIGGER  2", "bigger", "Bigger than the pivot:  leave it   [2]");
+            bigger = Pad(g, "BiggerPad", new Vector3(0.1f, 0f, 0f), mPadRed, "2  LARGER", "bigger", "Larger than the pivot:  leave it   [2]");
             g.gameObject.SetActive(false);
             return g;
         }

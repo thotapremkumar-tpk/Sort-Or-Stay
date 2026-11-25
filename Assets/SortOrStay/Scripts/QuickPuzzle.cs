@@ -85,11 +85,11 @@ namespace SortOrStay
         public Transform rangeStrip;         // glowing strip under the range being partitioned
         public Transform pads;               // the two choice buttons; they follow the bar being compared
         public PushButton smallerPad, biggerPad;
+        TMP_Text smallerPadText, biggerPadText;
         public float padsForward = -0.22f;   // the pads sit this far in front of the bar (toward the player)
         public Light pivotLight;
         public TMP_Text board;               // big screen above the vault door
         public Terminal terminal;
-        public Transform vaultWheel;         // the door's hand wheel spins before the door swings open
 
         [Header("Hands")]
         [Tooltip("The avatar walks this close to the pivot bar and lifts it by hand.")]
@@ -146,6 +146,8 @@ namespace SortOrStay
 
         public override void Setup()
         {
+            smallerPadText = PrepareChoiceLabel(smallerPad, new Color(0.65f, 0.86f, 1f));
+            biggerPadText = PrepareChoiceLabel(biggerPad, new Color(1f, 0.73f, 0.60f));
             int n = N;
             int want = Mathf.Min(minOutOfOrderPairs, n * (n - 1) / 2 - 1);
             int[] vals = Pick(valuePool, n);
@@ -175,6 +177,19 @@ namespace SortOrStay
             startTime = Time.time;
             if (Hand != null) Hand.Release();
             Refresh();
+        }
+
+        static TMP_Text PrepareChoiceLabel(PushButton button, Color color)
+        {
+            if (button == null) return null;
+            var label = button.GetComponentInChildren<TMP_Text>(true);
+            if (label == null) return null;
+            label.color = color;
+            label.richText = false;
+            label.rectTransform.sizeDelta = new Vector2(0.19f, 0.064f);
+            label.rectTransform.localPosition = new Vector3(0f, 0.02f, -0.105f);
+            label.rectTransform.localRotation = Quaternion.Euler(65f, 0f, 0f);
+            return label;
         }
 
         /// The first pivot (the last bar) should be neither among the two smallest nor the two biggest, so the
@@ -303,6 +318,7 @@ namespace SortOrStay
                 return;
             }
             comparisons++;
+            ProceduralSfx.Play(ProceduralSfx.Compare, b.transform.position, 0.75f);
             StartCoroutine(smaller ? SmallerRoutine() : BiggerRoutine());
         }
 
@@ -317,12 +333,12 @@ namespace SortOrStay
                 var c = items[wall];
                 swaps++;
                 Vector3 back = -slots[0].forward;          // toward the player
-                ProceduralSfx.Play(ProceduralSfx.Swap, b.transform.position, 0.6f);
+                ProceduralSfx.Play(ProceduralSfx.SortLayout, b.transform.position, 0.45f);
                 StartCoroutine(ArcTo(c, slots[cur].position, -back * 0.14f + Vector3.up * 0.05f, 0.45f));
                 yield return ArcTo(b, slots[wall].position, back * 0.14f + Vector3.up * 0.08f, 0.45f);
                 items[wall] = b;
                 items[cur] = c;
-                ProceduralSfx.Play(ProceduralSfx.Thud, b.transform.position, 0.5f);
+                ProceduralSfx.Play(ProceduralSfx.PieceSeat, b.transform.position, 0.55f);
                 if (ui != null) ui.Info($"{b.value} < {pivot.value}:  swapped behind the gate with {c.value}.");
             }
             else
@@ -332,7 +348,6 @@ namespace SortOrStay
             }
             wall++;
             cur++;
-            ProceduralSfx.Play(ProceduralSfx.Slide, gate != null ? gate.position : b.transform.position, 0.3f);
             AfterCompare();
         }
 
@@ -382,7 +397,7 @@ namespace SortOrStay
                 // the first bar bigger than the pivot moves into the pivot's old slot, behind the others
                 var c = items[p];
                 swaps++;
-                ProceduralSfx.Play(ProceduralSfx.Slide, c.transform.position, 0.5f);
+                ProceduralSfx.Play(ProceduralSfx.SortLayout, c.transform.position, 0.5f);
                 yield return ArcTo(c, slots[hi].position, slots[0].forward * 0.2f + Vector3.up * 0.06f, 0.5f);
                 items[hi] = c;
             }
@@ -397,7 +412,7 @@ namespace SortOrStay
             if (useHand) hand.Release();
             items[p] = pivot;
             placed[p] = true;
-            ProceduralSfx.Play(ProceduralSfx.Thud, slots[p].position, 0.9f);
+            ProceduralSfx.Play(ProceduralSfx.PieceSeat, slots[p].position, 0.7f);
             ProceduralSfx.Play(ProceduralSfx.Blip(Mathf.Min(7, p)), slots[p].position, 0.6f);
 
             int left = p - lo, right = hi - p;
@@ -586,20 +601,6 @@ namespace SortOrStay
                 yield return new WaitForSeconds(0.12f);
             }
 
-            // the hand wheel spins, then the vault door swings open
-            if (vaultWheel != null)
-            {
-                ProceduralSfx.Play(ProceduralSfx.Rattle, vaultWheel.position, 0.8f);
-                Quaternion r0 = vaultWheel.localRotation;
-                float e = 0f, dur = 1.6f;
-                while (e < dur)
-                {
-                    e += Time.deltaTime;
-                    float k = Mathf.SmoothStep(0f, 1f, e / dur);
-                    vaultWheel.localRotation = r0 * Quaternion.Euler(0f, 0f, -540f * k);
-                    yield return null;
-                }
-            }
             yield return new WaitForSeconds(0.2f);
             UnlockDoor();
 
@@ -692,17 +693,26 @@ namespace SortOrStay
                 {
                     Vector3 s = slots[cur].position;
                     pads.position = new Vector3(s.x, pads.position.y, s.z) + slots[0].forward * padsForward;
+                    if (smallerPadText != null) smallerPadText.text = $"1 SMALLER\n< {pivot.value}";
+                    if (biggerPadText != null) biggerPadText.text = $"2 LARGER\n> {pivot.value}";
+                    if (smallerPad != null) smallerPad.label = $"1 · Smaller than the pivot ({pivot.value})";
+                    if (biggerPad != null) biggerPad.label = $"2 · Larger than the pivot ({pivot.value})";
                 }
             }
 
             if (GameUI.Instance != null)
-                SetHudStats($"COMPARISONS  {comparisons}      SWAPS  {swaps}      HINTS  {hintsUsed}");
+            {
+                string compared = phase == Phase.Scan && pivot != null && cur < hi
+                    ? $"BAR {items[cur].value}  ·  PIVOT {pivot.value}     "
+                    : "";
+                SetHudStats($"{compared}COMPARISONS  {comparisons}      SWAPS  {swaps}      HINTS  {hintsUsed}");
+            }
 
             string step = Solved || phase == Phase.Done ? "ALL BARS IN ORDER"
                 : phase == Phase.Pivot && hi <= lo ? $"SLOT {lo + 1}   ·   ONE BAR ON ITS OWN:  ALREADY IN PLACE"
                 : phase == Phase.Pivot ? $"SLOTS {lo + 1}-{hi + 1}   ·   RAISE THE PIVOT  ({items[hi].value})"
                 : pivot == null ? $"{homeValue} IS HOME   ·   NEXT RANGE..."
-                : phase == Phase.Scan ? $"PIVOT {pivot.value}   ·   IS {items[cur].value} SMALLER OR BIGGER?"
+                : phase == Phase.Scan ? $"COMPARE {items[cur].value} WITH PIVOT {pivot.value}   ·   1 SMALLER   2 LARGER"
                 : $"PIVOT {pivot.value}   ·   DROP IT INTO SLOT {wall + 1}";
             string status = Solved ? "<color=#1f9d47>VAULT OPEN</color>" : "<color=#d8432f>LOCKED</color>";
 

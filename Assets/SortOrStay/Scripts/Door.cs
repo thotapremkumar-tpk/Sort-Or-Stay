@@ -42,7 +42,7 @@ namespace SortOrStay
             if (IsUnlocked) return;
             IsUnlocked = true;
             SetLamp(unlockedColor);
-            ProceduralSfx.Play(ProceduralSfx.Unlock, transform.position + Vector3.up * 1.5f, 1f);
+            ProceduralSfx.Play(ProceduralSfx.DoorRelease, transform.position + Vector3.up * 1.2f, 0.8f);
             StartCoroutine(OpenRoutine());
         }
 
@@ -50,7 +50,7 @@ namespace SortOrStay
         {
             yield return new WaitForSeconds(0.55f);
             while (shaking) yield return null;
-            ProceduralSfx.Play(swing ? ProceduralSfx.Rattle : ProceduralSfx.Slide, transform.position + Vector3.up * 1.2f, swing ? 0.5f : 0.9f);
+            ProceduralSfx.Play(ProceduralSfx.DoorMotion(openTime, swing, closing: false), transform.position + Vector3.up * 1.2f, 0.8f);
             if (swing) { yield return SwingOpen(); yield break; }
             float e = 0f;
             while (e < openTime)
@@ -63,6 +63,7 @@ namespace SortOrStay
             }
             if (panel != null) panel.localPosition = closedPos + openOffset;
             if (panelB != null) panelB.localPosition = closedPosB + openOffsetB;
+            ProceduralSfx.Play(ProceduralSfx.DoorEnd(closing: false), transform.position + Vector3.up * 1.2f, 0.65f);
             // the doorway is free now: let clicks walk through it
             if (PlayerController.Instance != null) PlayerController.Instance.RebuildNavMesh();
         }
@@ -83,7 +84,7 @@ namespace SortOrStay
                 yield return null;
             }
             SetSwing(1f);
-            ProceduralSfx.Play(ProceduralSfx.Thud, transform.position + Vector3.up * 1.2f, 0.4f);
+            ProceduralSfx.Play(ProceduralSfx.DoorEnd(closing: false), transform.position + Vector3.up * 1.2f, 0.65f);
             if (PlayerController.Instance != null) PlayerController.Instance.RebuildNavMesh();
         }
 

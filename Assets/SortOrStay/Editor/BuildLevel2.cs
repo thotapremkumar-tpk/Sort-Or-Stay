@@ -25,7 +25,7 @@ namespace SortOrStayEditor
         static readonly int[] PREVIEW = { 14, 6, 22, 3, 17, 9, 28 };
 
         static Material mFloor, mWall, mBand, mCeil, mSteel, mDark, mTread, mYellow, mCrate, mCrateFrame, mPaper, mPad, mLed, mNext,
-                        mFrame, mGlass, mScreen, mRed, mGreen, mShade, mBulb, mCardboard, mPallet, mExit, mLamp, mBlue, mDrumRed, mDrumBlue, mWhite;
+                        mFrame, mGlass, mScreen, mShade, mBulb, mCardboard, mPallet, mExit, mLamp, mBlue, mDrumRed, mDrumBlue, mWhite;
 
         static float BayX(int i) => -PITCH * (BAYS - 1) * 0.5f + PITCH * i;
 
@@ -97,15 +97,14 @@ namespace SortOrStayEditor
             var root = new GameObject("Level2_StorageRoom").transform;
             BuildRoom(root);
             var door = DoubleDoor(root, HD, T, DOOR_W, DOOR_H, mSteel, mDark, mLamp, mGlass, false);
-            door.lockedMessage = "The loading doors won't budge.  The board says: LIGHT TO HEAVY.";
+            door.lockedMessage = "The loading doors are locked. Sort the crates from lightest to heaviest.";
 
             Transform[] slots;
             Renderer[] leds; Transform[] padTops; TMP_Text[] readouts; Renderer next;
             BuildBays(root, out slots, out leds, out padTops, out readouts, out next);
             var crates = BuildCrates(root, slots);
             BuildCrane(root, out Transform trolley, out Transform cable, out Transform hook);
-            var board = BuildBoard(root);
-            var terminal = BuildConsole(root, out PushButton scanBtn, out PushButton hintBtn);
+            var terminal = BuildConsole(root);
             BuildFloorMarkings(root);
             BuildProps(root);
             BuildLights(root);
@@ -121,12 +120,9 @@ namespace SortOrStayEditor
             puzzle.trolley = trolley;
             puzzle.cable = cable;
             puzzle.hook = hook;
-            puzzle.board = board;
             puzzle.terminal = terminal;
             puzzle.nextMarker = next;
             terminal.puzzle = puzzle;
-            scanBtn.puzzle = puzzle;
-            hintBtn.puzzle = puzzle;
 
             return new FloorParts
             {
@@ -174,8 +170,6 @@ namespace SortOrStayEditor
             mLed = Emissive("L2_Led", new Color(0.2f, 0.2f, 0.22f), Color.black, 0f);
             mNext = Emissive("L2_NextBay", new Color(1f, 0.62f, 0.1f), new Color(1f, 0.62f, 0.1f), 1.5f);
             mScreen = MonitorScreen("L2_Screen");
-            mRed = Emissive("L2_ButtonRed", new Color(0.8f, 0.1f, 0.07f), new Color(0.9f, 0.12f, 0.06f), 0.8f);
-            mGreen = Emissive("L2_ButtonGreen", new Color(0.12f, 0.75f, 0.25f), new Color(0.15f, 0.9f, 0.3f), 0.9f);
             mBulb = Emissive("L2_Bulb", new Color(1f, 0.97f, 0.9f), new Color(1f, 0.93f, 0.8f), 2.5f);
             mExit = Emissive("L2_Exit", new Color(0.05f, 0.5f, 0.2f), new Color(0.1f, 0.9f, 0.35f), 1.6f);
             mLamp = Emissive("L2_DoorLamp", new Color(1f, 0.12f, 0.08f), new Color(1f, 0.12f, 0.08f), 4f);
@@ -353,19 +347,9 @@ namespace SortOrStayEditor
             Cube("Bar", new Vector3(0f, -0.02f, 0f), new Vector3(0.3f, 0.03f, 0.05f), mDark, hook, false);
         }
 
-        // ============================================================ status board + control desk
+        // ============================================================ control desk
 
-        static TMP_Text BuildBoard(Transform p)
-        {
-            var g = Group("StatusBoard", p);
-            g.localPosition = new Vector3(0f, 3.62f, HD);
-            Cube("Bezel", new Vector3(0f, 0f, -0.04f), new Vector3(2.6f, 0.9f, 0.08f), mDark, g, false);
-            Cube("Screen", new Vector3(0f, 0f, -0.082f), new Vector3(2.48f, 0.78f, 0.004f), mScreen, g, false);
-            return Text("BoardText", g, new Vector3(0f, 0f, -0.086f), new Vector2(2.36f, 0.7f),
-                        "<b>STOCK SCALE</b>  -  SELECTION SORT", new Color(0.75f, 0.95f, 1f), TextAlignmentOptions.Center, false);
-        }
-
-        static Terminal BuildConsole(Transform p, out PushButton scan, out PushButton hint)
+        static Terminal BuildConsole(Transform p)
         {
             // stands against the left wall and faces into the room (+X)
             var g = Group("ScaleControl", p);
@@ -387,28 +371,7 @@ namespace SortOrStayEditor
             bc.center = new Vector3(0f, 1.62f, -0.06f);
             bc.size = new Vector3(1.08f, 0.76f, 0.14f);
 
-            scan = Button(g, "ScanButton", new Vector3(-0.26f, 0.97f, -0.36f), mGreen, "SCAN ALL", "scan", "Weigh every crate that's left  (Q)");
-            hint = Button(g, "HintButton", new Vector3(0.28f, 0.97f, -0.36f), mRed, "HINT", "hint", "Ask for a hint  (H)");
             return term;
-        }
-
-        static PushButton Button(Transform g, string name, Vector3 pos, Material capMat, string label, string id, string prompt)
-        {
-            var b = Group(name, g);
-            b.localPosition = pos;
-            CylY("Collar", new Vector3(0f, 0.012f, 0f), 0.2f, 0.024f, mDark, b);
-            var cap = CylY("Cap", new Vector3(0f, 0.035f, 0f), 0.15f, 0.04f, capMat, b).transform;
-            var t = Text("Label", b, new Vector3(0f, 0.002f, -0.14f), new Vector2(0.3f, 0.05f), label, InkDark, TextAlignmentOptions.Center, true);
-            t.rectTransform.localPosition = new Vector3(0f, 0.001f, -0.15f);
-            t.rectTransform.localRotation = Quaternion.Euler(90f, 0f, 0f);
-            var bc = b.gameObject.AddComponent<BoxCollider>();
-            bc.center = new Vector3(0f, 0.05f, 0f);
-            bc.size = new Vector3(0.24f, 0.12f, 0.24f);
-            var pb = b.gameObject.AddComponent<PushButton>();
-            pb.id = id;
-            pb.label = prompt;
-            pb.cap = cap;
-            return pb;
         }
 
         // ============================================================ floor markings
@@ -438,16 +401,6 @@ namespace SortOrStayEditor
             Cube("Walk_L", new Vector3(-1.2f, y, 3.1f), new Vector3(t, 0.004f, 3.8f), mYellow, g, false);
             Cube("Walk_R", new Vector3(1.2f, y, 3.1f), new Vector3(t, 0.004f, 3.8f), mYellow, g, false);
 
-            // rules poster on the left wall, beside the desk
-            var poster = Group("RulesPoster", p);
-            poster.localPosition = new Vector3(-HW + 0.01f, 0f, 0.7f);
-            poster.localRotation = Quaternion.Euler(0f, -90f, 0f);
-            Cube("Board", new Vector3(0f, 1.75f, -0.01f), new Vector3(1.3f, 0.95f, 0.02f), mWhite, poster, false);
-            Cube("Stripe", new Vector3(0f, 2.16f, -0.022f), new Vector3(1.3f, 0.12f, 0.004f), mYellow, poster, false);
-            Text("Title", poster, new Vector3(0f, 2.16f, -0.026f), new Vector2(1.2f, 0.09f), "HOW THIS ROOM WORKS", InkDark, TextAlignmentOptions.Center, true);
-            Text("Body", poster, new Vector3(0f, 1.68f, -0.026f), new Vector2(1.16f, 0.72f),
-                 "1.  Weigh every crate that is still unsorted.\n2.  Find the lightest one.\n3.  The crane swaps it into the next bay.\n4.  Repeat with the crates that are left.\n\n<i>The scale forgets after every pass.</i>",
-                 InkDark, TextAlignmentOptions.TopLeft, false);
         }
 
         // ============================================================ props

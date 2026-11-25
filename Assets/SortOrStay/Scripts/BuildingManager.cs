@@ -87,8 +87,6 @@ namespace SortOrStay
                 var f = floors[i];
                 foreach (var r in f.rooms)
                     if (r.puzzle != null) r.puzzle.inputEnabled = false;
-                foreach (var r in f.rooms)
-                    if (r.entrance != null) r.entrance.SetRoom(r.roomMin, r.roomMax);
                 f.lights = new List<Light>();
                 if (f.root != null)
                     foreach (var l in f.root.GetComponentsInChildren<Light>(true))
@@ -143,7 +141,7 @@ namespace SortOrStay
             yield return null;
             var ui = GameUI.Instance;
             while ((player != null && player.cinematic) || (ui != null && (!ui.showHud || ui.Fade > 0.2f))) yield return null;
-            yield return new WaitForSeconds(0.8f);
+            if (CurrentIndex != 0 || RoomIndex != 0) yield return new WaitForSeconds(0.8f);
             if (guide != null) guide.OnFloorStart(Current.number, CurrentPuzzle);   // welcome + lesson (once per floor)
         }
 
@@ -216,6 +214,7 @@ namespace SortOrStay
             inRoom = true;
             roomDone = false;
             var room = CurrentRoom;
+            if (room.entrance != null) room.entrance.CloseBehindPlayer();
             ApplyHud(true);
             if (room.puzzle != null)
             {

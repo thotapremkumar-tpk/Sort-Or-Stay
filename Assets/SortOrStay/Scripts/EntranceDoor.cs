@@ -45,7 +45,7 @@ namespace SortOrStay
         IEnumerator Close()
         {
             IsClosed = true;
-            ProceduralSfx.Play(ProceduralSfx.Slide, transform.position + Vector3.up * 1.2f, 0.7f);
+            ProceduralSfx.Play(ProceduralSfx.DoorMotion(closeTime, hinged: false, closing: true), transform.position + Vector3.up * 1.2f, 0.8f);
             Vector3 from = panel.localPosition;
             float e = 0f;
             while (e < closeTime)
@@ -55,7 +55,7 @@ namespace SortOrStay
                 yield return null;
             }
             panel.localPosition = closedPos;
-            ProceduralSfx.Play(ProceduralSfx.Thud, transform.position + Vector3.up * 1.2f, 0.6f);
+            ProceduralSfx.Play(ProceduralSfx.DoorEnd(closing: true), transform.position + Vector3.up * 1.2f, 0.7f);
         }
     }
 }

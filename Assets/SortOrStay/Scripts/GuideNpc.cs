@@ -395,6 +395,13 @@ namespace SortOrStay
             var lines = new List<(string, Mood)>();
             if (floor == 1)
             {
+                // Start the welcome in view so the dialogue never opens with Ada behind the player.
+                var pc = PlayerController.Instance;
+                if (puzzle != null && puzzle.roomNumber == 1 && pc != null && !visible)
+                {
+                    PlaceAt(TalkSpot(pc), pc.transform.position);
+                    SetVisible(true);
+                }
                 lines.Add(($"Hello! I'm {displayName}, your guide. This building has five floors, and each floor teaches a different sorting algorithm.", Mood.Wave));
                 lines.Add(("Each floor has three rooms. Room 1 shows the <b>best case</b>, Room 2 shows the <b>average case</b>, and Room 3 shows the <b>worst case</b>. See how the starting order changes the amount of work you do.", Mood.Present));
                 lines.Add(("Solve a room, answer my three questions about it, and the next room opens.  After Room 3, the stairs open.", Mood.Neutral));
@@ -790,13 +797,6 @@ namespace SortOrStay
             }
             PlaceAt(pl + left * 1.0f, pl);
             failSince = -1f;
-        }
-
-        /// Is she past a doorway (for doors that shut behind the player: they wait for her too)?
-        public bool IsPast(Vector3 doorway, Vector3 inward, float metres)
-        {
-            Vector3 d = transform.position - doorway;
-            return Vector3.Dot(d, inward) > metres || Mathf.Abs(d.y) > 2f;
         }
 
         static float Flat(Vector3 a, Vector3 b) { a.y = 0f; b.y = 0f; return Vector3.Distance(a, b); }

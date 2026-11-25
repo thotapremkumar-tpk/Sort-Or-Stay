@@ -8765,7 +8765,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &357415883
 Transform:
   m_ObjectHideFlags: 0
@@ -10234,7 +10234,6 @@ MonoBehaviour:
   - {fileID: 1153718971}
   - {fileID: 857950032}
   mergeStrip: {fileID: 2146809073}
-  board: {fileID: 1240003356}
   terminal: {fileID: 1429080922}
   splitButton: {fileID: 179867309}
   handReach: 1.1
@@ -16855,7 +16854,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &721256395
 Transform:
   m_ObjectHideFlags: 0
@@ -21498,7 +21497,7 @@ MonoBehaviour:
   statusLight: {fileID: 867226964}
   lockedColor: {r: 1, g: 0.12, b: 0.08, a: 1}
   unlockedColor: {r: 0.2, g: 1, b: 0.35, a: 1}
-  lockedMessage: 'The doors stay shut.  The display wall reads:  ONE SORTED RUN.'
+  lockedMessage: 'The doors are locked. Merge the blocks into one sorted run.'
 --- !u!4 &876988244
 Transform:
   m_ObjectHideFlags: 0
