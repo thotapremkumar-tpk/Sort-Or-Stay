@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -55,11 +56,17 @@ namespace SortOrStay
         float fade = 1f;
         string flashMsg; Color flashColor; float flashUntil;
         string subtitle; float subtitleUntil;
-        string popupTitle, popupBody, popupFooter; float popupOpenedAt;
-        string endTitle, endBody, endFooter;
+        string popupTitle, popupBody, popupLocation; float popupOpenedAt;
+        bool popupQuiz;
+        (string label, string value)[] popupMetrics;
+        Vector2 popupScroll, endScroll;
+        string endTitle, endSummary;
+        (string name, string detail, string[] counts)[] endRows;
+        bool endHasCases;
         float controlsUntil;
 
-        GUIStyle sStats, sPrompt, sFlash, sSub, sSmall, sPopTitle, sPopBody, sFooter, sEndTitle, sEndBody, sPauseButton, sChip;
+        GUIStyle sStats, sPrompt, sFlash, sSub, sSmall, sPopTitle, sPopBody, sPauseButton, sChip;
+        GUIStyle sResultTitle, sResultValue, sResultButton;
         GUIStyle sControls;
 
         void Awake() { Instance = this; }
@@ -106,11 +113,24 @@ namespace SortOrStay
         public string PopupTitle => popupTitle;
         public string PopupBody => popupBody;
 
-        public void ShowPopup(string title, string body, string footer)
+        public void ShowDebrief(LevelResult result, string body, bool quiz, string actionLabel, int actions)
         {
             if (EndCardOpen) return;            // the floor is already over: the end card stays on top
-            popupTitle = title; popupBody = body; popupFooter = footer;
+            popupTitle = result.algorithm;
+            popupBody = body;
+            popupLocation = result.room > 0
+                ? $"Floor {result.level}  /  Room {result.room}  ·  {SortPuzzleBase.CaseLabel(result.sortCase)}"
+                : $"Floor {result.level}";
+            popupMetrics = new[]
+            {
+                ("Comparisons", result.comparisons.ToString()), (MoveLabel(result.level), result.swaps.ToString()),
+                (actionLabel, actions.ToString()), ("Mistakes", result.mistakes.ToString()),
+                ("Hints", result.hints.ToString()), ("Time", GameState.Clock(result.seconds))
+            };
+            popupQuiz = quiz;
+            popupScroll = Vector2.zero;
             popupShown = true; popupOpenedAt = Time.unscaledTime;
+            PlayerController.FreeCursor();
         }
 
         /// Something on the HUD (or the guide) used this click or key: the world ignores it this frame.
@@ -121,6 +141,7 @@ namespace SortOrStay
             if (!popupShown) return;
             popupShown = false;
             LastConsumeFrame = Time.frameCount;
+            PlayerController.ApplyCursorForMode();
         }
 
         public void SetPaused(bool p)
@@ -144,9 +165,29 @@ namespace SortOrStay
             return statsRect.Contains(g) || controlsRect.Contains(g);
         }
 
-        public void ShowEndCard(string title, string body, string footer)
+        public void ShowEndCard(string title)
         {
-            endTitle = title; endBody = body; endFooter = footer;
+            endTitle = title;
+            var results = GameState.Instance.results;
+            endHasCases = BuildingManager.Instance != null;
+            var scored = results.Where(r => (r.room > 0) == endHasCases).ToArray();
+            endRows = scored.GroupBy(r => r.level).OrderBy(g => g.Key).Select(g =>
+            {
+                string name = $"Floor {g.Key}  ·  {g.First().algorithm}";
+                int hints = g.Sum(r => r.hints), mistakes = g.Sum(r => r.mistakes);
+                string time = GameState.Clock(g.Sum(r => r.seconds));
+                string CountFor(SortCase sortCase) => g.FirstOrDefault(r => r.sortCase == sortCase)?.comparisons.ToString() ?? "—";
+                string detail = endHasCases
+                    ? $"{g.Count()}/3 rooms  ·  {hints} hints  ·  {mistakes} mistakes  ·  {g.Sum(r => r.quizSlips)} quiz misses  ·  {time}"
+                    : $"{g.First().swaps} {MoveLabel(g.Key).ToLowerInvariant()}  ·  {hints} hints  ·  {mistakes} mistakes  ·  {time}";
+                string[] counts = endHasCases
+                    ? new[] { CountFor(SortCase.Best), CountFor(SortCase.Average), CountFor(SortCase.Worst) }
+                    : new[] { g.First().comparisons.ToString() };
+                return (name, detail, counts);
+            }).ToArray();
+            string completed = endHasCases ? $"{scored.Length}/15 rooms completed" : $"{endRows.Length}/5 floors completed";
+            endSummary = $"{completed}  ·  Total time {GameState.Clock(scored.Sum(r => r.seconds))}";
+            endScroll = Vector2.zero;
             EndCardOpen = true; popupShown = false; ModalOpen = false;
         }
 
@@ -155,9 +196,8 @@ namespace SortOrStay
         void Update()
         {
             if (!popupShown) return;
-            var kb = Keyboard.current; var mouse = Mouse.current;
-            bool close = (kb != null && (kb.eKey.wasPressedThisFrame || kb.enterKey.wasPressedThisFrame || kb.spaceKey.wasPressedThisFrame))
-                      || (mouse != null && mouse.leftButton.wasPressedThisFrame);
+            var kb = Keyboard.current;
+            bool close = kb != null && (kb.eKey.wasPressedThisFrame || kb.enterKey.wasPressedThisFrame || kb.spaceKey.wasPressedThisFrame);
             if (close && Time.unscaledTime > popupOpenedAt + 0.6f) ClosePopup();
         }
 
@@ -171,7 +211,7 @@ namespace SortOrStay
             float W = Screen.width / s, H = 1080f;
             EnsureStyles();
 
-            if (showHud && !EndCardOpen)
+            if (showHud && !EndCardOpen && !popupShown)
             {
                 // Floor and room progress stay in the HUD. Instructions are on the room terminal.
                 float cx0 = 28f, cy0 = 26f;
@@ -274,20 +314,7 @@ namespace SortOrStay
             }
 
             // popup ("why this works")
-            if (popupShown)
-            {
-                float pw = Mathf.Min(1060f, W - 80f);
-                float bodyH = sPopBody.CalcHeight(new GUIContent(popupBody), pw - 96f);
-                float ph = 40f + 56f + 18f + bodyH + 30f + 40f + 30f;
-                Rect r = new Rect((W - pw) * 0.5f, (H - ph) * 0.5f, pw, ph);
-                Box(new Rect(0f, 0f, W, H), new Color(0.95f, 0.95f, 0.95f, 0.25f));
-                Shadow(r);
-                Box(r, CardSolid);
-                Box(new Rect(r.x, r.y, pw, 7f), Accent);
-                Text(new Rect(r.x + 48f, r.y + 36f, pw - 96f, 56f), popupTitle, sPopTitle, Accent);
-                Text(new Rect(r.x + 48f, r.y + 110f, pw - 96f, bodyH + 8f), popupBody, sPopBody, Ink);
-                Text(new Rect(r.x + 48f, r.y + ph - 62f, pw - 96f, 34f), popupFooter, sFooter, InkSoft);
-            }
+            if (popupShown) DrawDebrief(W, H);
 
             if (PauseOpen) DrawPause(W, H);
 
@@ -295,18 +322,132 @@ namespace SortOrStay
             if (fade > 0.001f) Box(new Rect(0f, 0f, W, H), new Color(fadeColor.r, fadeColor.g, fadeColor.b, fade));
 
             // end card, drawn over the fade
-            if (EndCardOpen)
+            if (EndCardOpen) DrawScoreboard(W, H);
+        }
+
+        // ------------------------------------------------------------ results
+
+        static readonly Color ResultTile = new Color(0.40f, 0.63f, 0.74f, 0.15f);
+        static readonly Color ResultMuted = new Color(0.76f, 0.84f, 0.89f);
+        static readonly string[] CaseColumns = { "Best", "Average", "Worst" };
+        static readonly string[] StandaloneColumns = { "Comparisons" };
+
+        static string MoveLabel(int level) => level == 3 ? "Shifts" : level == 4 ? "Moves" : "Swaps";
+
+        void DrawDebrief(float width, float height)
+        {
+            const float inset = 32f, gap = 10f, tileHeight = 76f;
+            float panelWidth = Mathf.Min(1020f, width - 56f);
+            float inner = panelWidth - 2f * inset;
+            int columns = inner >= 600f ? 6 : inner >= 390f ? 3 : 2;
+            int rows = (popupMetrics.Length + columns - 1) / columns;
+            float gridHeight = rows * (tileHeight + gap) - gap;
+            float textWidth = inner - 22f;
+            float bodyHeight = sPopBody.CalcHeight(new GUIContent(popupBody), textWidth) + 8f;
+            float titleHeight = sResultTitle.CalcHeight(new GUIContent(popupTitle), inner) + 4f;
+            float chrome = 100f + titleHeight + gridHeight + 62f;
+            float bodyView = Mathf.Min(bodyHeight, height - 72f - chrome);
+            float panelHeight = chrome + bodyView;
+            Rect panel = new Rect((width - panelWidth) * 0.5f, (height - panelHeight) * 0.5f, panelWidth, panelHeight);
+
+            Box(new Rect(0f, 0f, width, height), new Color(0.02f, 0.05f, 0.09f, 0.48f));
+            GlassPanel(panel, 22f);
+            float x = panel.x + inset;
+            Text(new Rect(x, panel.y + 24f, inner, 26f), popupLocation, sSmall, GlassAccent);
+            Text(new Rect(x, panel.y + 54f, inner, titleHeight), popupTitle, sResultTitle, GlassText);
+
+            float y = panel.y + 66f + titleHeight;
+            float tileWidth = (inner - (columns - 1) * gap) / columns;
+            for (int i = 0; i < popupMetrics.Length; i++)
             {
-                Box(new Rect(0f, 0f, W, H), new Color(0.97f, 0.96f, 0.94f, 1f));
-                float cw = Mathf.Min(1180f, W - 80f);
-                float x = (W - cw) * 0.5f;
-                float bodyH = sEndBody.CalcHeight(new GUIContent(endBody), cw);
-                float top = Mathf.Max(80f, (H - (120f + bodyH + 80f)) * 0.5f);
-                Box(new Rect(x, top, 120f, 7f), Accent);
-                Text(new Rect(x, top + 24f, cw, 80f), endTitle, sEndTitle, Accent);
-                Text(new Rect(x, top + 120f, cw, bodyH + 10f), endBody, sEndBody, Ink);
-                Text(new Rect(x, top + 140f + bodyH, cw, 40f), endFooter, sFooter, InkSoft);
+                var metric = popupMetrics[i];
+                float left = x + (i % columns) * (tileWidth + gap);
+                float top = y + (i / columns) * (tileHeight + gap);
+                RoundedBox(new Rect(left, top, tileWidth, tileHeight), ResultTile, 10f);
+                Text(new Rect(left, top + 8f, tileWidth, 39f), metric.value, sResultValue, GlassAccent);
+                Text(new Rect(left, top + 44f, tileWidth, 24f), metric.label, sChip, ResultMuted);
             }
+
+            y += gridHeight + 21f;
+            Rect body = new Rect(x, y, inner, bodyView);
+            if (bodyHeight > bodyView)
+            {
+                popupScroll = GUI.BeginScrollView(body, popupScroll, new Rect(0f, 0f, textWidth, bodyHeight));
+                Text(new Rect(0f, 0f, textWidth, bodyHeight), popupBody, sPopBody, GlassText);
+                GUI.EndScrollView();
+            }
+            else Text(body, popupBody, sPopBody, GlassText);
+
+            float buttonWidth = Mathf.Min(280f, inner);
+            Rect button = new Rect(panel.xMax - inset - buttonWidth, panel.yMax - 65f, buttonWidth, 46f);
+            string action = popupQuiz ? "Start quiz  (E)" : "Continue  (E)";
+            if (GlassButton(button, action, sResultButton, primary: true) && Time.unscaledTime > popupOpenedAt + 0.6f)
+                ClosePopup();
+        }
+
+        void DrawScoreboard(float width, float height)
+        {
+            const float inset = 32f, gap = 8f;
+            float panelWidth = Mathf.Min(1140f, width - 56f);
+            float inner = panelWidth - inset * 2f;
+            float titleHeight = sResultTitle.CalcHeight(new GUIContent(endTitle), inner) + 6f;
+            float summaryHeight = sControls.CalcHeight(new GUIContent(endSummary), inner) + 4f;
+            bool compact = inner < 820f;
+            float rowWidth = inner - 22f;
+            string[] headers = endHasCases ? CaseColumns : StandaloneColumns;
+            float countWidth = compact ? rowWidth / headers.Length : endHasCases ? 102f : 138f;
+            float detailWidth = (compact ? rowWidth : rowWidth - countWidth * headers.Length) - 30f;
+            float nameHeight = 28f, detailHeight = 24f;
+            foreach (var row in endRows)
+            {
+                nameHeight = Mathf.Max(nameHeight, sStats.CalcHeight(new GUIContent(row.name), detailWidth));
+                detailHeight = Mathf.Max(detailHeight, sControls.CalcHeight(new GUIContent(row.detail), detailWidth));
+            }
+            float textHeight = 24f + nameHeight + detailHeight;
+            float rowHeight = Mathf.Max(78f, textHeight + (compact ? 60f : 4f));
+            float tableHeight = Mathf.Max(1, endRows.Length) * (rowHeight + gap);
+            float captionHeight = endHasCases ? 29f : 0f;
+            float chrome = 148f + titleHeight + summaryHeight + captionHeight;
+            float tableView = Mathf.Min(tableHeight, height - 72f - chrome);
+            float panelHeight = chrome + tableView;
+            Rect panel = new Rect((width - panelWidth) * 0.5f, (height - panelHeight) * 0.5f, panelWidth, panelHeight);
+
+            Box(new Rect(0f, 0f, width, height), new Color(0.026f, 0.056f, 0.09f));
+            GlassPanel(panel, 22f);
+            float x = panel.x + inset;
+            Text(new Rect(x, panel.y + 19f, inner, 26f), "Final scoreboard", sSmall, GlassAccent);
+            Text(new Rect(x, panel.y + 48f, inner, titleHeight), endTitle, sResultTitle, GlassText);
+            Text(new Rect(x, panel.y + 51f + titleHeight, inner, summaryHeight), endSummary, sControls, ResultMuted);
+
+            float y = panel.y + 66f + titleHeight + summaryHeight;
+            if (endHasCases)
+                Text(new Rect(x, y, inner, captionHeight), "Comparisons by case", sSmall, GlassAccent);
+            y += captionHeight;
+            Rect table = new Rect(x, y, inner, tableView);
+            endScroll = GUI.BeginScrollView(table, endScroll, new Rect(0f, 0f, rowWidth, tableHeight));
+            for (int i = 0; i < endRows.Length; i++)
+            {
+                var row = endRows[i];
+                float top = i * (rowHeight + gap);
+                float countStart = rowWidth - countWidth * row.counts.Length;
+                RoundedBox(new Rect(0f, top, rowWidth, rowHeight), ResultTile, 10f);
+                Text(new Rect(15f, top + 11f, detailWidth, nameHeight), row.name, sStats, GlassText);
+                Text(new Rect(15f, top + 14f + nameHeight, detailWidth, detailHeight), row.detail, sControls, ResultMuted);
+                for (int k = 0; k < row.counts.Length; k++)
+                {
+                    float left = countStart + k * countWidth;
+                    float countTop = top + (compact ? textHeight : (rowHeight - 61f) * 0.5f);
+                    Text(new Rect(left, countTop, countWidth, 28f), headers[k], sChip, ResultMuted);
+                    Text(new Rect(left, countTop + 23f, countWidth, 38f), row.counts[k], sResultValue, GlassAccent);
+                }
+            }
+            if (endRows.Length == 0) Text(new Rect(0f, 10f, rowWidth, 36f), "No room results recorded.", sControls, ResultMuted);
+            GUI.EndScrollView();
+
+            float buttonWidth = Mathf.Min(240f, inner * 0.54f);
+            Rect button = new Rect(panel.xMax - inset - buttonWidth, panel.yMax - 58f, buttonWidth, 40f);
+            Text(new Rect(x, button.y + 8f, inner - buttonWidth - 12f, 40f), "1–5  Start on a floor", sControls, ResultMuted);
+            if (GlassButton(button, "Play again  (R)", sResultButton, primary: true)) LevelManager.Reload();
         }
 
         // ------------------------------------------------------------ pause menu
@@ -492,9 +633,9 @@ namespace SortOrStay
             sControls = Make(19, FontStyle.Normal, TextAnchor.UpperLeft, true);
             sPopTitle = Make(40, FontStyle.Bold, TextAnchor.UpperLeft, false);
             sPopBody = Make(25, FontStyle.Normal, TextAnchor.UpperLeft, true);
-            sFooter = Make(22, FontStyle.Bold, TextAnchor.UpperLeft, false);
-            sEndTitle = Make(64, FontStyle.Bold, TextAnchor.UpperLeft, false);
-            sEndBody = Make(27, FontStyle.Normal, TextAnchor.UpperLeft, true);
+            sResultTitle = Make(46, FontStyle.Bold, TextAnchor.UpperLeft, true);
+            sResultValue = Make(30, FontStyle.Bold, TextAnchor.MiddleCenter, false);
+            sResultButton = Make(22, FontStyle.Bold, TextAnchor.MiddleCenter, false);
             sPauseButton = Make(23, FontStyle.Bold, TextAnchor.MiddleLeft, false);
             sChip = Make(18, FontStyle.Bold, TextAnchor.MiddleCenter, false);
         }

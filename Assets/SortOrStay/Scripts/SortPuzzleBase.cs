@@ -135,11 +135,6 @@ namespace SortOrStay
                 : open;
         }
 
-        protected string DebriefFooter(string normal)
-        {
-            return QuizPending ? "Click or press E to close  ·  then answer 3 questions to open the door" : normal;
-        }
-
         /// Keeps this room's score (one line per floor and room on the scoreboard).
         protected void Record(LevelResult r)
         {

@@ -408,13 +408,14 @@ namespace SortOrStay
 
             UnlockDoor();
             float seconds = Time.time - startTime;
-            Record(new LevelResult
+            var result = new LevelResult
             {
                 level = 3, algorithm = "Insertion sort",
                 comparisons = comparisons, swaps = shifts, minSwaps = startInversions,
                 hints = hintsUsed, mistakes = mistakes, seconds = seconds,
                 detail = $"{shifts} shifts  ·  {comparisons} comparisons"
-            });
+            };
+            Record(result);
             Refresh();
 
             var ui = GameUI.Instance;
@@ -423,13 +424,10 @@ namespace SortOrStay
 
             int n = items.Count;
             string body =
-                "You sorted the shelf where it stood:  each book was pulled out and walked left, " +
-                "bigger books shifted one place right, and it dropped into the gap.  <b>That's insertion sort</b>, the way most people sort a hand of cards.\n\n" +
-                $"Shifts  <b>{shifts}</b>        Comparisons  <b>{comparisons}</b>        Slips  <b>{mistakes}</b>        Hints  <b>{hintsUsed}</b>        Time  <b>{GameState.Clock(seconds)}</b>\n\n" +
-                $"{shifts} shifts = the {startInversions} out-of-order pairs on the shelf:  every shift fixes exactly one pair.\n" +
-                $"Already in order, every book would stay put:  {n - 1} comparisons and zero shifts.  " +
-                $"That's why insertion sort is the go-to for lists that are <b>nearly sorted</b>.  In reverse order it needs n(n−1)/2 = {n * (n - 1) / 2} shifts.";
-            if (ui != null) ui.ShowPopup("THAT'S INSERTION SORT", body, DebriefFooter("Click or press E to close  ·  then walk through the glass doors"));
+                "<b>What you did</b>\nYou took the next book, shifted larger books one place to the right, and put the book in the gap. The sorted part of the shelf grew with each insertion.\n\n" +
+                $"<b>Why the count matters</b>\nEach shift fixes one out-of-order pair. This shelf started with {startInversions} such pairs. " +
+                $"An already sorted shelf needs {n - 1} comparisons and no shifts. A reversed shelf needs {n * (n - 1) / 2} shifts.";
+            if (ui != null) ui.ShowDebrief(result, body, QuizPending, "Insertions", n - 1);
             busy = false;
         }
 

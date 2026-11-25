@@ -53,19 +53,10 @@ namespace SortOrStay
             {
                 if (levelNumber >= GameState.FloorScenes.Length)
                 {
-                    int floorsDone = GameState.Instance.results.Select(r => r.level).Distinct().Count();
-                    bool all = floorsDone >= GameState.FloorScenes.Length;
-                    bool rooms = GameState.Instance.results.Any(r => r.room > 0);
-                    ui.ShowEndCard(all ? (rooms ? "YOU ESCAPED  ·  5 FLOORS  ·  15 ROOMS" : "YOU ESCAPED  ·  ALL 5 FLOORS") : "YOU ESCAPED",
-                                   Scoreboard() + (all ? (rooms ? "\n\nFive algorithms, each in its best, average and worst case.  One way out."
-                                                                : "\n\nFive floors, five sorting algorithms, one way out.")
-                                                       : "\n\nPlay from Floor 1 to see all five algorithms on one scoreboard."),
-                                   building ? "R  play the building again from the top      ·      1 - 5  start on a floor"
-                                            : "R  play the Vault again      ·      1 - 5  jump to a floor");
+                    ui.ShowEndCard("You escaped");
                 }
                 else
-                    ui.ShowEndCard($"FLOORS 1–{levelNumber} ESCAPED", Scoreboard() + $"\n\nNext:  {nextFloorLabel}  (coming soon)",
-                                   "R  play this floor again      ·      1 - 5  jump to a floor");
+                    ui.ShowEndCard($"Floor {levelNumber} complete");
             }
             PlayerController.FreeCursor();
         }

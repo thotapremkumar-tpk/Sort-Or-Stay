@@ -605,13 +605,14 @@ namespace SortOrStay
             UnlockDoor();
 
             float seconds = Time.time - startTime;
-            Record(new LevelResult
+            var result = new LevelResult
             {
                 level = 5, algorithm = "Quick sort",
                 comparisons = comparisons, swaps = swaps, minSwaps = 0,
                 hints = hintsUsed, mistakes = mistakes, seconds = seconds,
                 detail = $"{swaps} swaps  ·  {comparisons} comparisons"
-            });
+            };
+            Record(result);
             Refresh();
 
             var ui = GameUI.Instance;
@@ -619,20 +620,11 @@ namespace SortOrStay
             yield return new WaitForSeconds(2.2f);
 
             int n = N;
-            int levels = Mathf.RoundToInt(Mathf.Log(n, 2f));
-            string compare = "";
-            var f4 = GameState.Instance.Get(4);
-            if (f4 != null) compare = $"\n\nMerge sort on Floor 4 needed {f4.comparisons} comparisons, but it needed the merge row.  Quick sort sorted the bars where they lay.";
             string body =
-                "Raise a pivot, swap every smaller bar behind the gate, drop the pivot in:  it lands in its final place and never moves again.  " +
-                "Then do the same to each side.  <b>That's quick sort</b>, divide and conquer without a second row.\n\n" +
-                $"Comparisons  <b>{comparisons}</b>      Swaps  <b>{swaps}</b>      Pivots  <b>{partitions}</b>      Slips  <b>{mistakes}</b>      Hints  <b>{hintsUsed}</b>      Time  <b>{GameState.Clock(seconds)}</b>\n\n" +
-                $"Your pivots  (smaller | bigger):   {string.Join("     ", pivotLog)}\n\n" +
-                $"A pivot near the middle halves the work, so quick sort needs about n·log₂n comparisons ({n * levels} for {n} bars), and it is usually the fastest sort in practice.  " +
-                $"A pivot that is the smallest or the biggest leaves one side empty:  on bars that are already in order it falls to n(n−1)/2 = <b>{n * (n - 1) / 2}</b>.  " +
-                "That's why real libraries choose their pivot with care." +
-                compare;
-            if (ui != null) ui.ShowPopup("THAT'S QUICK SORT", body, DebriefFooter("Click or press E to close  ·  then walk out through the vault door"));
+                "<b>What you did</b>\nYou grouped smaller bars on one side of the pivot and larger bars on the other. You then put the pivot in its final slot and repeated the process on each side.\n\n" +
+                $"<b>Why the count matters</b>\nA pivot near the middle gives two shorter groups. A pivot that leaves one side empty every time needs {n * (n - 1) / 2} comparisons for {n} bars.\n\n" +
+                $"<b>Your pivots (smaller count | larger count)</b>\n{string.Join("   ·   ", pivotLog)}";
+            if (ui != null) ui.ShowDebrief(result, body, QuizPending, "Pivots", partitions);
             busy = false;
         }
 

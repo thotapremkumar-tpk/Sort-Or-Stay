@@ -585,13 +585,14 @@ namespace SortOrStay
 
             UnlockDoor();
             float seconds = Time.time - startTime;
-            Record(new LevelResult
+            var result = new LevelResult
             {
                 level = 2, algorithm = "Selection sort",
                 comparisons = comparisons, swaps = swaps, minSwaps = 0,
                 hints = hintsUsed, mistakes = mistakes, seconds = seconds,
                 detail = $"{swaps} swaps  ·  {weighings} weighings  ·  {comparisons} comparisons"
-            });
+            };
+            Record(result);
             Refresh();
 
             var ui = GameUI.Instance;
@@ -599,16 +600,10 @@ namespace SortOrStay
             yield return new WaitForSeconds(1.3f);
 
             int n = N;
-            var floor1 = GameState.Instance.Get(1);
-            string compare = floor1 != null
-                ? $"\n\nOn Floor 1, bubble sort needed <b>{floor1.swaps}</b> swaps for 6 keys.  Selection sort trades moving for looking:  few swaps, many comparisons.  That's the right trade when moving things is expensive, like heavy crates."
-                : "\n\nBubble sort would have shuffled these crates around many more times.  Selection sort trades moving for looking:  few swaps, many comparisons.";
             string body =
-                "Every pass you checked <b>every</b> crate that was left, found the lightest, and made <b>one</b> swap to put it in the next bay.  <b>That's selection sort.</b>\n\n" +
-                $"Your swaps  <b>{swaps}</b>   (never more than n−1 = {n - 1})        Weighings  <b>{weighings}</b>        Hints  <b>{hintsUsed}</b>        Time  <b>{GameState.Clock(seconds)}</b>\n\n" +
-                $"The algorithm's comparisons:  {n - 1}+{n - 2}+…+1 = <b>{comparisons}</b> = n(n−1)/2.  It always does exactly that many, even if the crates start in order, because it never remembers what it has seen." +
-                compare;
-            if (ui != null) ui.ShowPopup("THAT'S SELECTION SORT", body, DebriefFooter("Click or press E to close  ·  then walk through the loading doors"));
+                "<b>What you did</b>\nYou checked the remaining crates and found the lightest one. The crane swapped it into the next bay only when it was out of place.\n\n" +
+                $"<b>Why the count matters</b>\nWith {n} crates, selection sort always makes {comparisons} comparisons. A sorted row needs no swaps, and the most any row can need is {n - 1}.";
+            if (ui != null) ui.ShowDebrief(result, body, QuizPending, "Weighings", weighings);
             busy = false;
         }
 

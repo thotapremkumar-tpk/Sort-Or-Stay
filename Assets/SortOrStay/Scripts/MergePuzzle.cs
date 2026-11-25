@@ -555,13 +555,14 @@ namespace SortOrStay
 
             UnlockDoor();
             float seconds = Time.time - startTime;
-            Record(new LevelResult
+            var result = new LevelResult
             {
                 level = 4, algorithm = "Merge sort",
                 comparisons = comparisons, swaps = moves, minSwaps = 0,
                 hints = hintsUsed, mistakes = mistakes, seconds = seconds,
                 detail = $"{moves} moves  ·  {comparisons} comparisons"
-            });
+            };
+            Record(result);
             Refresh();
 
             var ui = GameUI.Instance;
@@ -571,19 +572,10 @@ namespace SortOrStay
             int n = N;
             int levels = Mathf.RoundToInt(Mathf.Log(n, 2f));
             int maxCmp = n * levels - n + 1;
-            string compare = "";
-            var f3 = GameState.Instance.Get(3);
-            if (f3 != null) compare = $"\n\nOn Floor 3, insertion sort needed {f3.comparisons} comparisons for 8 books.";
             string body =
-                "You split the row until every block stood alone (one block is always sorted), then merged sorted runs two at a time, " +
-                "always taking the <b>smaller front block</b>.  <b>That's merge sort:</b>  divide, then conquer.\n\n" +
-                $"Comparisons  <b>{comparisons}</b>        Moves  <b>{moves}</b>        Slips  <b>{mistakes}</b>        Hints  <b>{hintsUsed}</b>        Time  <b>{GameState.Clock(seconds)}</b>\n\n" +
-                $"Every level moved all {n} blocks once:  log₂{n} = {levels} levels × {n} = <b>{n * levels} moves</b> = n·log₂n, however scrambled the blocks were.  " +
-                $"A merge never needs more comparisons than blocks minus one, so merge sort never goes past n·log₂n − n + 1 = <b>{maxCmp}</b> for {n} blocks.  " +
-                $"Bubble or selection sort can need n(n−1)/2 = <b>{n * (n - 1) / 2}</b>, and the gap grows fast:  for 1,000 items about 10,000 against 500,000.\n" +
-                "The price is the merge row:  merge sort needs a second row (extra memory) to merge into." +
-                compare;
-            if (ui != null) ui.ShowPopup("THAT'S MERGE SORT", body, DebriefFooter("Click or press E to close  ·  then walk through the doors"));
+                "<b>What you did</b>\nYou split the row into single blocks, then joined sorted groups by taking the smaller front block. Once one group ran out, you moved the rest of the other group.\n\n" +
+                $"<b>Why the count matters</b>\nAll {n} blocks move once at each of the {levels} merge stages. The starting order affects comparisons, which can reach {maxCmp} for {n} blocks. The extra merge row holds the result as you build it.";
+            if (ui != null) ui.ShowDebrief(result, body, QuizPending, "Split rounds", splits);
             busy = false;
         }
 

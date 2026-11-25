@@ -461,13 +461,14 @@ namespace SortOrStay
             UnlockDoor();
             float seconds = Time.time - startTime;
             int passes = pass + (cmp > 0 ? 1 : 0);
-            Record(new LevelResult
+            var result = new LevelResult
             {
                 level = 1, algorithm = "Bubble sort",
                 comparisons = comparisons, swaps = swaps, minSwaps = startInversions,
                 hints = hintsUsed, mistakes = mistakes, seconds = seconds,
                 detail = $"{swaps} swaps (fewest {startInversions})  ·  {comparisons} comparisons in {passes} passes"
-            });
+            };
+            Record(result);
             Refresh();
 
             var ui = GameUI.Instance;
@@ -475,18 +476,11 @@ namespace SortOrStay
             yield return new WaitForSeconds(1.4f);
 
             int n = items.Count;
-            string extra = mistakes > 0
-                ? $"\n\n{mistakes} of your calls were wrong (a swap of keys already in order, or a stay when the left key was bigger).  Bubble sort never makes those moves."
-                : "\n\nEvery call was right, exactly what bubble sort would do.";
             string body =
-                "Pass after pass you compared neighbours from left to right: swap when the left key is bigger, otherwise let them stay.  " +
-                "Each pass pushed the biggest remaining key to the end.  <b>That's bubble sort.</b>\n\n" +
-                $"Passes  <b>{passes}</b>        Comparisons  <b>{comparisons}</b>        Swaps  <b>{swaps}</b>  (fewest possible  <b>{startInversions}</b>)\n" +
-                $"Hints  <b>{hintsUsed}</b>        Time  <b>{Mathf.FloorToInt(seconds / 60f)}:{Mathf.FloorToInt(seconds % 60f):00}</b>\n\n" +
-                $"Why {startInversions} swaps?  The keys started with {startInversions} out-of-order pairs and every neighbour swap fixes exactly one." + extra +
-                $"\n\nA computer running bubble sort on {n} keys makes up to {n - 1} passes and {n * (n - 1) / 2} comparisons, n(n-1)/2, " +
-                "and one last pass with no swaps to know it is done.  Simple, but slow as the list grows.";
-            if (ui != null) ui.ShowPopup("THAT'S BUBBLE SORT", body, DebriefFooter("Click or press E to close  ·  then walk through the door"));
+                "<b>What you did</b>\nYou compared neighbouring keys from left to right. Swap when the left key is larger. Each full pass moves the largest remaining key to the end.\n\n" +
+                $"<b>Why the count matters</b>\nThis row started with {startInversions} out-of-order pairs. Each adjacent swap removes one, so it takes exactly {startInversions} swaps. " +
+                $"A reverse-ordered row of {n} keys takes {n * (n - 1) / 2} comparisons.";
+            if (ui != null) ui.ShowDebrief(result, body, QuizPending, "Passes", passes);
             busy = false;
         }
 
